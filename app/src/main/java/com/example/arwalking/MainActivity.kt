@@ -2,414 +2,485 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.layout.padding
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.zIndex
 import com.example.arwalking.R
 
 @Composable
 fun AndroidCompact2(modifier: Modifier = Modifier) {
+    var startDropdownExpanded by remember { mutableStateOf(false) }
+    var destinationDropdownExpanded by remember { mutableStateOf(false) }
+    var selectedStart by remember { mutableStateOf("Start suchen...") }
+    var selectedDestination by remember { mutableStateOf("Ziel suchen...") }
+
+    val startOptions = listOf(
+        "Büro Prof. Dr. Wolff (PT 3.0.60E)",
+        "Bibliothek",
+        "Labor (PT 3.0.28)",
+        "Informatik"
+    )
+
+    val destinationOptions = listOf(
+        "Mensa",
+        "Hörsaal A",
+        "Hörsaal B",
+        "Parkplatz"
+    )
+
     Box(
-        modifier = modifier
-            .requiredWidth(width = 412.dp)
-            .requiredHeight(height = 917.dp)
+        modifier = modifier.fillMaxSize()
     ) {
+        // Background Image
         Image(
             painter = painterResource(id = R.drawable.background),
-            contentDescription = "Android Compact - 2",
-            modifier = Modifier
-                .fillMaxSize())
+            contentDescription = "Background",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+
+        // Top gradient overlay
         Box(
             modifier = Modifier
-                .requiredWidth(width = 412.dp)
-                .requiredHeight(height = 144.dp)
-                .background(brush = Brush.linearGradient(
-                    0f to Color.Black.copy(alpha = 0.76f),
-                    1f to Color(0xff837f7f),
-                    start = Offset(201.5f, 58.05f),
-                    end = Offset(203f, 144f))))
-        Property1Variant2(
-            modifier = Modifier
-                .align(alignment = Alignment.TopStart)
-                .offset(x = 8.dp,
-                    y = 50.dp))
+                .align(Alignment.TopCenter)
+                .requiredWidth(412.dp)
+                .requiredHeight(200.dp)
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.3f),
+                            Color.Transparent
+                        )
+                    )
+                )
+        )
+
+        // Bottom gradient overlay
         Box(
             modifier = Modifier
-                .align(alignment = Alignment.TopStart)
-                .offset(x = 106.dp,
-                    y = 56.dp)
-                .requiredWidth(width = 201.dp)
-                .requiredHeight(height = 75.dp)
+                .align(Alignment.BottomCenter)
+                .requiredWidth(412.dp)
+                .requiredHeight(200.dp)
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.3f)
+                        )
+                    )
+                )
+        )
+
+        // Top Logo Section
+        Image(
+            painter = painterResource(id = R.drawable.logo),
+            contentDescription = "AR Walking Logo",
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = 120.dp)
+                .requiredWidth(280.dp)
+                .requiredHeight(80.dp)
+        )
+
+        // Vertical dots connection
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .requiredWidth(4.dp)
+                .requiredHeight(120.dp)
         ) {
-            Image(
-                painter = painterResource(id = R.drawable.logo),
-                contentDescription = "image 1",
-                modifier = Modifier
-                    .requiredWidth(width = 201.dp)
-                    .requiredHeight(height = 75.dp))
-            Text(
-                text = "AR",
-                color = Color(0xff94ad0b),
-                style = MaterialTheme.typography.headlineLarge,
-                modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 60.dp,
-                        y = 6.dp))
-        }
-        Box(
-            modifier = Modifier
-                .align(alignment = Alignment.TopStart)
-                .offset(x = 43.dp,
-                    y = 312.dp)
-                .requiredWidth(width = 327.dp)
-                .requiredHeight(height = 47.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .requiredWidth(width = 327.dp)
-                    .requiredHeight(height = 47.dp)
-                    .clip(shape = RoundedCornerShape(16.dp))
-                    .background(color = Color.White.copy(alpha = 0.07f))
-                    .shadow(elevation = 12.dp,
-                        shape = RoundedCornerShape(16.dp)))
-            Text(
-                text = "Start suchen...",
-                color = Color(0xffe4e0e0),
-                style = TextStyle(
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Light),
-                modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 48.dp,
-                        y = 11.dp))
-            Box(
-                modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 14.dp,
-                        y = 11.dp)
-                    .requiredSize(size = 24.dp)
-            ) {
+            repeat(15) { index ->
                 Box(
                     modifier = Modifier
-                        .requiredSize(size = 24.dp)
-                        .clip(shape = CircleShape)
-                        .background(color = Color(0xff0278b6).copy(alpha = 0.14f)))
-                Box(
-                    modifier = Modifier
-                        .align(alignment = Alignment.TopStart)
-                        .offset(x = 5.33.dp,
-                            y = 5.33.dp)
-                        .requiredSize(size = 13.dp)
-                        .clip(shape = CircleShape)
-                        .background(color = Color(0xff0278b6))
-                        .border(border = BorderStroke(0.5.dp, Color.White),
-                            shape = CircleShape))
+                        .offset(y = (index * 8).dp)
+                        .requiredSize(4.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.8f))
+                )
             }
         }
-        Icon(
-            painter = painterResource(id = R.drawable.chevrondown1),
-            contentDescription = "chevron-down 1",
-            modifier = Modifier
-                .align(alignment = Alignment.TopStart)
-                .offset(x = 331.dp,
-                    y = 324.dp))
+
+        // Start Location Search Field
         Box(
             modifier = Modifier
-                .align(alignment = Alignment.TopStart)
-                .offset(x = 203.dp,
-                    y = 368.dp)
-                .requiredWidth(width = 6.dp)
-                .requiredHeight(height = 141.dp)
+                .align(Alignment.Center)
+                .offset(y = (-80).dp)
+                .requiredWidth(350.dp)
+                .requiredHeight(50.dp)
+                .zIndex(2f)
         ) {
             Box(
                 modifier = Modifier
-                    .requiredWidth(width = 6.dp)
-                    .requiredHeight(height = 6.dp)
-                    .clip(shape = CircleShape)
-                    .background(color = Color.White))
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(25.dp))
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.35f),
+                                Color.White.copy(alpha = 0.15f),
+                                Color.White.copy(alpha = 0.25f)
+                            )
+                        )
+                    )
+                    .border(
+                        width = 1.5.dp,
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.6f),
+                                Color.White.copy(alpha = 0.2f),
+                                Color.White.copy(alpha = 0.4f)
+                            )
+                        ),
+                        shape = RoundedCornerShape(25.dp)
+                    )
+                    .shadow(
+                        elevation = 10.dp,
+                        shape = RoundedCornerShape(25.dp),
+                        ambientColor = Color.Black.copy(alpha = 0.1f),
+                        spotColor = Color.Black.copy(alpha = 0.1f)
+                    )
+                    .clickable { startDropdownExpanded = !startDropdownExpanded }
+            )
+
             Box(
                 modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 0.dp,
-                        y = 9.01.dp)
-                    .requiredWidth(width = 6.dp)
-                    .requiredHeight(height = 6.dp)
-                    .clip(shape = CircleShape)
-                    .background(color = Color.White))
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(25.dp))
+                    .background(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.1f),
+                                Color.Transparent
+                            ),
+                            radius = 200f
+                        )
+                    )
+            )
+
             Box(
                 modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 0.dp,
-                        y = 18.03.dp)
-                    .requiredWidth(width = 6.dp)
-                    .requiredHeight(height = 6.dp)
-                    .clip(shape = CircleShape)
-                    .background(color = Color.White))
-            Box(
-                modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 0.dp,
-                        y = 27.04.dp)
-                    .requiredWidth(width = 6.dp)
-                    .requiredHeight(height = 6.dp)
-                    .clip(shape = CircleShape)
-                    .background(color = Color.White))
-            Box(
-                modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 0.dp,
-                        y = 36.05.dp)
-                    .requiredWidth(width = 6.dp)
-                    .requiredHeight(height = 6.dp)
-                    .clip(shape = CircleShape)
-                    .background(color = Color.White))
-            Box(
-                modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 0.dp,
-                        y = 45.07.dp)
-                    .requiredWidth(width = 6.dp)
-                    .requiredHeight(height = 6.dp)
-                    .clip(shape = CircleShape)
-                    .background(color = Color.White))
-            Box(
-                modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 0.dp,
-                        y = 54.08.dp)
-                    .requiredWidth(width = 6.dp)
-                    .requiredHeight(height = 6.dp)
-                    .clip(shape = CircleShape)
-                    .background(color = Color.White))
-            Box(
-                modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 0.dp,
-                        y = 63.1.dp)
-                    .requiredWidth(width = 6.dp)
-                    .requiredHeight(height = 6.dp)
-                    .clip(shape = CircleShape)
-                    .background(color = Color.White))
-            Box(
-                modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 0.dp,
-                        y = 72.11.dp)
-                    .requiredWidth(width = 6.dp)
-                    .requiredHeight(height = 6.dp)
-                    .clip(shape = CircleShape)
-                    .background(color = Color.White))
-            Box(
-                modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 0.dp,
-                        y = 81.12.dp)
-                    .requiredWidth(width = 6.dp)
-                    .requiredHeight(height = 6.dp)
-                    .clip(shape = CircleShape)
-                    .background(color = Color.White))
-            Box(
-                modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 0.dp,
-                        y = 90.14.dp)
-                    .requiredWidth(width = 6.dp)
-                    .requiredHeight(height = 6.dp)
-                    .clip(shape = CircleShape)
-                    .background(color = Color.White))
-            Box(
-                modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 0.dp,
-                        y = 99.15.dp)
-                    .requiredWidth(width = 6.dp)
-                    .requiredHeight(height = 6.dp)
-                    .clip(shape = CircleShape)
-                    .background(color = Color.White))
-            Box(
-                modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 0.dp,
-                        y = 108.16.dp)
-                    .requiredWidth(width = 6.dp)
-                    .requiredHeight(height = 6.dp)
-                    .clip(shape = CircleShape)
-                    .background(color = Color.White))
-            Box(
-                modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 0.dp,
-                        y = 117.18.dp)
-                    .requiredWidth(width = 6.dp)
-                    .requiredHeight(height = 6.dp)
-                    .clip(shape = CircleShape)
-                    .background(color = Color.White))
-            Box(
-                modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 0.dp,
-                        y = 126.19.dp)
-                    .requiredWidth(width = 6.dp)
-                    .requiredHeight(height = 6.dp)
-                    .clip(shape = CircleShape)
-                    .background(color = Color.White))
-            Box(
-                modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 0.dp,
-                        y = 135.21.dp)
-                    .requiredWidth(width = 6.dp)
-                    .requiredHeight(height = 6.dp)
-                    .clip(shape = CircleShape)
-                    .background(color = Color.White))
-        }
-        Box(
-            modifier = Modifier
-                .align(alignment = Alignment.TopStart)
-                .offset(x = 43.dp,
-                    y = 520.dp)
-                .requiredWidth(width = 327.dp)
-                .requiredHeight(height = 47.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .requiredWidth(width = 327.dp)
-                    .requiredHeight(height = 47.dp)
-                    .clip(shape = RoundedCornerShape(16.dp))
-                    .background(color = Color.White.copy(alpha = 0.07f))
-                    .shadow(elevation = 12.dp,
-                        shape = RoundedCornerShape(16.dp)))
+                    .align(Alignment.CenterStart)
+                    .offset(x = 20.dp)
+                    .requiredSize(12.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xff00a8e8))
+            )
+
             Text(
-                text = "Ziel suchen...",
-                color = Color(0xffe4e0e0),
-                style = TextStyle(
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Light),
+                text = selectedStart,
+                color = Color.White.copy(alpha = 0.95f),
+                style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Normal),
                 modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 48.dp,
-                        y = 11.dp))
-            Image(
+                    .align(Alignment.CenterStart)
+                    .offset(x = 45.dp)
+            )
+
+            Icon(
+                painter = painterResource(id = R.drawable.chevrondown1),
+                contentDescription = "dropdown",
+                tint = Color.White.copy(alpha = 0.95f),
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .offset(x = (-20).dp)
+            )
+        }
+
+        if (startDropdownExpanded) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .offset(y = (-25).dp)
+                    .requiredWidth(350.dp)
+                    .zIndex(3f)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = 0.4f),
+                                    Color.White.copy(alpha = 0.2f),
+                                    Color.White.copy(alpha = 0.35f)
+                                )
+                            )
+                        )
+                        .border(
+                            width = 1.5.dp,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = 0.7f),
+                                    Color.White.copy(alpha = 0.3f),
+                                    Color.White.copy(alpha = 0.5f)
+                                )
+                            ),
+                            shape = RoundedCornerShape(16.dp)
+                        )
+                        .shadow(
+                            elevation = 15.dp,
+                            shape = RoundedCornerShape(16.dp),
+                            ambientColor = Color.Black.copy(alpha = 0.2f)
+                        )
+                        .padding(8.dp)
+                ) {
+                    startOptions.forEach { option ->
+                        Text(
+                            text = option,
+                            color = Color.White.copy(alpha = 0.95f),
+                            style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selectedStart = option
+                                    startDropdownExpanded = false
+                                }
+                                .padding(vertical = 12.dp, horizontal = 16.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Destination Search Field
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .offset(y = 80.dp)
+                .requiredWidth(350.dp)
+                .requiredHeight(50.dp)
+                .zIndex(2f)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(25.dp))
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.35f),
+                                Color.White.copy(alpha = 0.15f),
+                                Color.White.copy(alpha = 0.25f)
+                            )
+                        )
+                    )
+                    .border(
+                        width = 1.5.dp,
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.6f),
+                                Color.White.copy(alpha = 0.2f),
+                                Color.White.copy(alpha = 0.4f)
+                            )
+                        ),
+                        shape = RoundedCornerShape(25.dp)
+                    )
+                    .shadow(
+                        elevation = 10.dp,
+                        shape = RoundedCornerShape(25.dp),
+                        ambientColor = Color.Black.copy(alpha = 0.1f),
+                        spotColor = Color.Black.copy(alpha = 0.1f)
+                    )
+                    .clickable { destinationDropdownExpanded = !destinationDropdownExpanded }
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(25.dp))
+                    .background(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.1f),
+                                Color.Transparent
+                            ),
+                            radius = 200f
+                        )
+                    )
+            )
+
+            Icon(
                 painter = painterResource(id = R.drawable.mappin1),
-                contentDescription = "map-pin 1",
+                contentDescription = "location pin",
+                tint = Color(0xffff4757),
                 modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 13.dp,
-                        y = 11.dp)
-                    .requiredSize(size = 24.dp))
+                    .align(Alignment.CenterStart)
+                    .offset(x = 20.dp)
+                    .requiredSize(20.dp)
+            )
+
+            Text(
+                text = selectedDestination,
+                color = Color.White.copy(alpha = 0.95f),
+                style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Normal),
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .offset(x = 50.dp)
+            )
+
+            Icon(
+                painter = painterResource(id = R.drawable.chevrondown2),
+                contentDescription = "dropdown",
+                tint = Color.White.copy(alpha = 0.95f),
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .offset(x = (-20).dp)
+            )
         }
-        Icon(
-            painter = painterResource(id = R.drawable.chevrondown2),
-            contentDescription = "chevron-down 2",
-            modifier = Modifier
-                .align(alignment = Alignment.TopStart)
-                .offset(x = 325.dp,
-                    y = 532.dp))
-        Box(
-            modifier = Modifier
-                .align(alignment = Alignment.TopStart)
-                .offset(x = 136.dp,
-                    y = 627.dp)
-                .requiredWidth(width = 141.dp)
-                .requiredHeight(height = 39.dp)
-        ) {
+
+        if (destinationDropdownExpanded) {
             Box(
                 modifier = Modifier
-                    .requiredWidth(width = 141.dp)
-                    .requiredHeight(height = 39.dp)
-                    .clip(shape = RoundedCornerShape(16.dp))
-                    .background(color = Color(0xff94ad0c))
-                    .border(border = BorderStroke(1.dp, Color.White),
-                        shape = RoundedCornerShape(16.dp))
-                    .shadow(elevation = 4.dp,
-                        shape = RoundedCornerShape(16.dp)))
-            Box(
-                modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 14.dp,
-                        y = 6.dp)
-                    .requiredWidth(width = 107.dp)
-                    .requiredHeight(height = 25.dp)
+                    .align(Alignment.Center)
+                    .offset(y = 135.dp)
+                    .requiredWidth(350.dp)
+                    .zIndex(3f)
             ) {
-                Text(
-                    text = "Starten",
-                    color = Color.White,
-                    style = TextStyle(
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Light),
+                Column(
                     modifier = Modifier
-                        .align(alignment = Alignment.TopStart)
-                        .offset(x = 35.dp,
-                            y = 0.dp))
-                Image(
-                    painter = painterResource(id = R.drawable.navigation21),
-                    contentDescription = "navigation-2 1",
-                    modifier = Modifier
-                        .requiredSize(size = 24.dp))
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = 0.4f),
+                                    Color.White.copy(alpha = 0.2f),
+                                    Color.White.copy(alpha = 0.35f)
+                                )
+                            )
+                        )
+                        .border(
+                            width = 1.5.dp,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.White.copy(alpha = 0.7f),
+                                    Color.White.copy(alpha = 0.3f),
+                                    Color.White.copy(alpha = 0.5f)
+                                )
+                            ),
+                            shape = RoundedCornerShape(16.dp)
+                        )
+                        .shadow(
+                            elevation = 15.dp,
+                            shape = RoundedCornerShape(16.dp),
+                            ambientColor = Color.Black.copy(alpha = 0.2f)
+                        )
+                        .padding(8.dp)
+                ) {
+                    destinationOptions.forEach { option ->
+                        Text(
+                            text = option,
+                            color = Color.White.copy(alpha = 0.95f),
+                            style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selectedDestination = option
+                                    destinationDropdownExpanded = false
+                                }
+                                .padding(vertical = 12.dp, horizontal = 16.dp)
+                        )
+                    }
+                }
             }
         }
     }
-}
 
-@Composable
-fun Property1Variant2(modifier: Modifier = Modifier) {
+    // Start Button
     Box(
-        modifier = modifier
-            .requiredWidth(width = 290.dp)
-            .requiredHeight(height = 248.dp)
-    ) {
-        Property1Default()
-    }
-}
-
-@Composable
-fun Property1Default(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(start = 12.dp,
-                end = 244.dp,
-                top = 18.dp,
-                bottom = 196.dp)
+        modifier = Modifier
+            .offset(y = 180.dp)
+            .requiredWidth(200.dp)
+            .requiredHeight(50.dp)
+            .zIndex(1f)
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clip(shape = RoundedCornerShape(7.dp))
-                .background(color = Color(0xff94ac0b)))
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(shape = RoundedCornerShape(7.dp))
-                .background(color = Color(0xff94ac0b)))
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(shape = RoundedCornerShape(7.dp))
-                .background(color = Color(0xff94ac0b)))
+                .clip(RoundedCornerShape(25.dp))
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xff94ad0c),
+                            Color(0xff7a9208),
+                            Color(0xff94ad0c)
+                        )
+                    )
+                )
+                .border(
+                    width = 1.dp,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color(0xffa8c40f),
+                            Color(0xff6d7f06)
+                        )
+                    ),
+                    shape = RoundedCornerShape(25.dp)
+                )
+                .shadow(
+                    elevation = 8.dp,
+                    shape = RoundedCornerShape(25.dp),
+                    ambientColor = Color.Black.copy(alpha = 0.3f),
+                    spotColor = Color.Black.copy(alpha = 0.3f)
+                )
+        )
+
+        Row(
+            modifier = Modifier.align(Alignment.Center),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                painter = painterResource(id = R.drawable.navigation21),
+                contentDescription = "navigation",
+                tint = Color.White,
+                modifier = Modifier.requiredSize(24.dp)
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Text(
+                text = "Starten",
+                color = Color.White,
+                style = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Medium)
+            )
+        }
     }
 }
 
