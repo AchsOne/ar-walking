@@ -1,5 +1,6 @@
 package com.example.arwalking
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,6 +14,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.arwalking.ui.theme.ArWalkingTheme
 
+import android.util.Log
+import androidx.appcompat.app.AppCompatActivity
+import com.google.gson.Gson
+
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -25,6 +31,21 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
+            }
+        }
+        loadRouteParts(this)
+    }
+    private fun loadRouteParts(context: Context) {
+        val jsonString = loadJSONFromAsset(context, "route.json")
+        val gson = Gson()
+        val routeWrapper = gson.fromJson(jsonString, RouteWrapper::class.java)
+
+        val routeParts = routeWrapper.route.path.firstOrNull()?.routeParts ?: emptyList()
+
+        for ((index, part) in routeParts.withIndex()) {
+            Log.d("RoutePart", "Schritt ${index + 1}: ${part.instruction}")
+            for (landmark in part.landmarks) {
+                Log.d("Landmark", " → ID: ${landmark.id}, Typ: ${landmark.type}, x: ${landmark.x}, y: ${landmark.y}")
             }
         }
     }
