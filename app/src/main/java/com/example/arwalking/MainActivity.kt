@@ -3,10 +3,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,8 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.ui.Alignment
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -27,17 +28,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -66,7 +69,8 @@ fun AndroidCompact2(modifier: Modifier = Modifier) {
     )
 
     Box(
-        modifier = modifier.fillMaxSize()
+        modifier = modifier
+            .fillMaxSize()
     ) {
         // Background Image
         Image(
@@ -119,21 +123,30 @@ fun AndroidCompact2(modifier: Modifier = Modifier) {
                 .requiredHeight(80.dp)
         )
 
-        // Vertical dots connection
+        // Vertical dots connection (mehr Punkte, größerer Abstand)
+
+        val dotCount = 30
+        val totalHeight = 250.dp
+
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
+                .requiredHeight(totalHeight)
                 .requiredWidth(4.dp)
-                .requiredHeight(120.dp)
         ) {
-            repeat(15) { index ->
-                Box(
-                    modifier = Modifier
-                        .offset(y = (index * 8).dp)
-                        .requiredSize(4.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.8f))
-                )
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.SpaceBetween,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                repeat(dotCount) {
+                    Box(
+                        modifier = Modifier
+                            .size(4.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.8f))
+                    )
+                }
             }
         }
 
@@ -141,7 +154,7 @@ fun AndroidCompact2(modifier: Modifier = Modifier) {
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
-                .offset(y = (-80).dp)
+                .offset(y = (-150).dp)
                 .requiredWidth(350.dp)
                 .requiredHeight(50.dp)
                 .zIndex(2f)
@@ -179,6 +192,7 @@ fun AndroidCompact2(modifier: Modifier = Modifier) {
                     .clickable { startDropdownExpanded = !startDropdownExpanded }
             )
 
+            // Verstärkter Blur-Effekt
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -186,10 +200,11 @@ fun AndroidCompact2(modifier: Modifier = Modifier) {
                     .background(
                         brush = Brush.radialGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = 0.1f),
+                                Color.White.copy(alpha = 0.25f),
+                                Color.White.copy(alpha = 0.05f),
                                 Color.Transparent
                             ),
-                            radius = 200f
+                            radius = 150f
                         )
                     )
             )
@@ -206,7 +221,15 @@ fun AndroidCompact2(modifier: Modifier = Modifier) {
             Text(
                 text = selectedStart,
                 color = Color.White.copy(alpha = 0.95f),
-                style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Normal),
+                style = TextStyle(
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Normal,
+                    shadow = Shadow(
+                        color = Color.Black.copy(alpha = 0.5f),
+                        offset = Offset(1f, 1f),
+                        blurRadius = 3f
+                    )
+                ),
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .offset(x = 45.dp)
@@ -223,10 +246,11 @@ fun AndroidCompact2(modifier: Modifier = Modifier) {
         }
 
         if (startDropdownExpanded) {
+            // Dropdown unterhalb der Suchleiste mit Abstand
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .offset(y = (-25).dp)
+                    .offset(y = (-29).dp)
                     .requiredWidth(350.dp)
                     .zIndex(3f)
             ) {
@@ -237,10 +261,11 @@ fun AndroidCompact2(modifier: Modifier = Modifier) {
                         .background(
                             brush = Brush.verticalGradient(
                                 colors = listOf(
-                                    Color.White.copy(alpha = 0.4f),
-                                    Color.White.copy(alpha = 0.2f),
-                                    Color.White.copy(alpha = 0.35f)
+                                    Color.Black.copy(alpha = 0.45f),
+                                    Color.Black.copy(alpha = 0.25f),
+                                    Color.Black.copy(alpha = 0.4f)
                                 )
+
                             )
                         )
                         .border(
@@ -254,18 +279,21 @@ fun AndroidCompact2(modifier: Modifier = Modifier) {
                             ),
                             shape = RoundedCornerShape(16.dp)
                         )
-                        .shadow(
-                            elevation = 15.dp,
-                            shape = RoundedCornerShape(16.dp),
-                            ambientColor = Color.Black.copy(alpha = 0.2f)
-                        )
-                        .padding(8.dp)
+
                 ) {
                     startOptions.forEach { option ->
                         Text(
                             text = option,
                             color = Color.White.copy(alpha = 0.95f),
-                            style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal),
+                            style = TextStyle(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Normal,
+                                shadow = Shadow(
+                                    color = Color.Black.copy(alpha = 0.4f),
+                                    offset = Offset(1f, 1f),
+                                    blurRadius = 2f
+                                )
+                            ),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
@@ -283,7 +311,7 @@ fun AndroidCompact2(modifier: Modifier = Modifier) {
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
-                .offset(y = 80.dp)
+                .offset(y = 150.dp)
                 .requiredWidth(350.dp)
                 .requiredHeight(50.dp)
                 .zIndex(2f)
@@ -321,6 +349,7 @@ fun AndroidCompact2(modifier: Modifier = Modifier) {
                     .clickable { destinationDropdownExpanded = !destinationDropdownExpanded }
             )
 
+            // Verstärkter Blur-Effekt
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -328,10 +357,11 @@ fun AndroidCompact2(modifier: Modifier = Modifier) {
                     .background(
                         brush = Brush.radialGradient(
                             colors = listOf(
-                                Color.White.copy(alpha = 0.1f),
+                                Color.White.copy(alpha = 0.25f),
+                                Color.White.copy(alpha = 0.05f),
                                 Color.Transparent
                             ),
-                            radius = 200f
+                            radius = 150f
                         )
                     )
             )
@@ -349,7 +379,15 @@ fun AndroidCompact2(modifier: Modifier = Modifier) {
             Text(
                 text = selectedDestination,
                 color = Color.White.copy(alpha = 0.95f),
-                style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.Normal),
+                style = TextStyle(
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Normal,
+                    shadow = Shadow(
+                        color = Color.Black.copy(alpha = 0.5f),
+                        offset = Offset(1f, 1f),
+                        blurRadius = 3f
+                    )
+                ),
                 modifier = Modifier
                     .align(Alignment.CenterStart)
                     .offset(x = 50.dp)
@@ -366,10 +404,11 @@ fun AndroidCompact2(modifier: Modifier = Modifier) {
         }
 
         if (destinationDropdownExpanded) {
+            // Dropdown unterhalb der Suchleiste mit Abstand
             Box(
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .offset(y = 135.dp)
+                    .offset(y = 272.dp)
                     .requiredWidth(350.dp)
                     .zIndex(3f)
             ) {
@@ -380,9 +419,9 @@ fun AndroidCompact2(modifier: Modifier = Modifier) {
                         .background(
                             brush = Brush.verticalGradient(
                                 colors = listOf(
-                                    Color.White.copy(alpha = 0.4f),
-                                    Color.White.copy(alpha = 0.2f),
-                                    Color.White.copy(alpha = 0.35f)
+                                    Color.Black.copy(alpha = 0.45f),
+                                    Color.Black.copy(alpha = 0.25f),
+                                    Color.Black.copy(alpha = 0.4f)
                                 )
                             )
                         )
@@ -397,18 +436,21 @@ fun AndroidCompact2(modifier: Modifier = Modifier) {
                             ),
                             shape = RoundedCornerShape(16.dp)
                         )
-                        .shadow(
-                            elevation = 15.dp,
-                            shape = RoundedCornerShape(16.dp),
-                            ambientColor = Color.Black.copy(alpha = 0.2f)
-                        )
-                        .padding(8.dp)
+
                 ) {
                     destinationOptions.forEach { option ->
                         Text(
                             text = option,
                             color = Color.White.copy(alpha = 0.95f),
-                            style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal),
+                            style = TextStyle(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Normal,
+                                shadow = Shadow(
+                                    color = Color.Black.copy(alpha = 0.4f),
+                                    offset = Offset(1f, 1f),
+                                    blurRadius = 2f
+                                )
+                            ),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
@@ -421,65 +463,64 @@ fun AndroidCompact2(modifier: Modifier = Modifier) {
                 }
             }
         }
-    }
 
-    // Start Button
-    Box(
-        modifier = Modifier
-            .offset(y = 180.dp)
-            .requiredWidth(200.dp)
-            .requiredHeight(50.dp)
-            .zIndex(1f)
-    ) {
+        // Start Button nun unten mittig
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .clip(RoundedCornerShape(25.dp))
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xff94ad0c),
-                            Color(0xff7a9208),
-                            Color(0xff94ad0c)
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 180.dp)
+                .requiredWidth(200.dp)
+                .requiredHeight(50.dp)
+                .zIndex(1f)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(25.dp))
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xff94ad0c),
+                                Color(0xff7a9208),
+                                Color(0xff94ad0c)
+                            )
                         )
                     )
-                )
-                .border(
-                    width = 1.dp,
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xffa8c40f),
-                            Color(0xff6d7f06)
-                        )
-                    ),
-                    shape = RoundedCornerShape(25.dp)
-                )
-                .shadow(
-                    elevation = 8.dp,
-                    shape = RoundedCornerShape(25.dp),
-                    ambientColor = Color.Black.copy(alpha = 0.3f),
-                    spotColor = Color.Black.copy(alpha = 0.3f)
-                )
-        )
-
-        Row(
-            modifier = Modifier.align(Alignment.Center),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                painter = painterResource(id = R.drawable.navigation21),
-                contentDescription = "navigation",
-                tint = Color.White,
-                modifier = Modifier.requiredSize(24.dp)
+                    .border(
+                        width = 1.dp,
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xffa8c40f),
+                                Color(0xff6d7f06)
+                            )
+                        ),
+                        shape = RoundedCornerShape(25.dp)
+                    )
+                    .shadow(
+                        elevation = 8.dp,
+                        shape = RoundedCornerShape(25.dp),
+                        ambientColor = Color.Black.copy(alpha = 0.3f),
+                        spotColor = Color.Black.copy(alpha = 0.3f)
+                    )
             )
 
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Text(
-                text = "Starten",
-                color = Color.White,
-                style = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Medium)
-            )
+            Row(
+                modifier = Modifier.align(Alignment.Center),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.navigation21),
+                    contentDescription = "navigation",
+                    tint = Color.White,
+                    modifier = Modifier.requiredSize(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Starten",
+                    color = Color.White,
+                    style = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.Medium)
+                )
+            }
         }
     }
 }
