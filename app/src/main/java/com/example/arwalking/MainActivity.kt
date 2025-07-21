@@ -1,5 +1,12 @@
 package com.example.arwalking
 
+import androidx.activity.result.ActivityResultLauncher
+import androidx.core.content.ContextCompat
+import androidx.activity.result.contract.ActivityResultContracts
+import android.provider.MediaStore
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -20,9 +27,35 @@ import com.example.arwalking.screens.HomeScreen
 import com.example.arwalking.ui.theme.ARWalkingTheme
 
 class MainActivity : ComponentActivity() {
+
+    private val cameraPermissionLauncher: ActivityResultLauncher<String> =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                openCamera()
+            }
+        }
+
+    private fun openCamera() {
+        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+        if (intent.resolveActivity(packageManager) != null) {
+            startActivity(intent)
+        }
+    }
+
+    private fun checkCameraAndLaunch() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            openCamera()
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        checkCameraAndLaunch()
         setContent {
             ARWalkingTheme {
                 Surface(
@@ -51,12 +84,12 @@ fun ARWalkingApp() {
             CameraNavigation()
         }
 
-
         // Hier können später weitere Screens hinzugefügt werden:
         // composable("ar_view") { ARScreen(navController = navController) }
         // composable("settings") { SettingsScreen(navController = navController) }
     }
 }
+
 @Preview(showBackground = true)
 @Composable
 private fun ARWalkingAppPreview() {
