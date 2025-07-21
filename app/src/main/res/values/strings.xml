@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">ArWalking</string>
+    <string name="starten">Starten</string>
+    <string name="logo_desc">Ar Walking Logo: Schriftzug A R mit einem Ampelmännchen</string>
 </resources>
