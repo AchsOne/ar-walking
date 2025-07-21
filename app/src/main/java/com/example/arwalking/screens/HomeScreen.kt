@@ -63,17 +63,17 @@ fun HomeScreen(
     var selectedDestination by remember { mutableStateOf("Ziel suchen...") }
 
     val startOptions = listOf(
-        "Büro Prof. Dr. Wolff (PT 3.0.60E)",
-        "Bibliothek",
-        "Labor (PT 3.0.28)",
-        "Informatik"
+        "Büro Prof. Dr. Wolff (PT 3.0.60)",
+        "Büro Prof. Dr. Ludwig (PT 3.0.84C) ",
+        "Mensa (coming soon)",
+        "Parkplatz (coming soon)"
     )
 
     val destinationOptions = listOf(
-        "Mensa",
-        "Hörsaal A",
-        "Hörsaal B",
-        "Parkplatz"
+        "Büro Prof. Dr. Wolff (PT 3.0.60)",
+        "Büro Prof. Dr. Ludwig (PT 3.0.84C) ",
+        "Mensa (coming soon)",
+        "Parkplatz (coming soon)"
     )
 
     Box(
@@ -132,7 +132,7 @@ fun HomeScreen(
 
         // Vertical dots connection
         val dotCount = 30
-        val totalHeight = 250.dp
+        val totalHeight = 266.dp
 
         Box(
             modifier = Modifier
@@ -174,7 +174,7 @@ fun HomeScreen(
         LocationDropdown(
             modifier = Modifier
                 .align(Alignment.Center)
-                .offset(y = 150.dp),
+                .offset(y = -90.dp),
             selectedText = selectedDestination,
             options = destinationOptions,
             isExpanded = destinationDropdownExpanded,
@@ -182,7 +182,7 @@ fun HomeScreen(
             onOptionSelected = { selectedDestination = it },
             iconResource = R.drawable.mappin1,
             iconTint = Color(0xffff4757),
-            dropdownOffset = 272.dp
+            dropdownOffset = 260.dp
         )
 
         // Start Button

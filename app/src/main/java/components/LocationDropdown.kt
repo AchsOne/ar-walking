@@ -46,13 +46,15 @@ fun LocationDropdown(
     iconTint: Color = Color.White,
     dropdownOffset: Dp = 0.dp
 ) {
-    // Main dropdown field
+    // Haupt-Feld
     Box(
         modifier = modifier
+            .offset(y = dropdownOffset)
             .requiredWidth(350.dp)
             .requiredHeight(50.dp)
             .zIndex(2f)
     ) {
+        // Hintergrund, Border, Shadow & Klick
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -86,7 +88,7 @@ fun LocationDropdown(
                 .clickable { onExpandedChange(!isExpanded) }
         )
 
-        // Blur effect
+        // Blur‑Effekt
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -103,11 +105,11 @@ fun LocationDropdown(
                 )
         )
 
-        // Icon or blue dot
+        // Icon oder blauer Punkt
         if (iconResource != null) {
             Icon(
                 painter = painterResource(id = iconResource),
-                contentDescription = "location icon",
+                contentDescription = null,
                 tint = iconTint,
                 modifier = Modifier
                     .align(Alignment.CenterStart)
@@ -115,7 +117,6 @@ fun LocationDropdown(
                     .requiredSize(20.dp)
             )
         } else {
-            // Blue dot for start location
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
@@ -126,7 +127,7 @@ fun LocationDropdown(
             )
         }
 
-        // Text
+        // Ausgewählter Text
         Text(
             text = selectedText,
             color = Color.White.copy(alpha = 0.95f),
@@ -144,10 +145,12 @@ fun LocationDropdown(
                 .offset(x = if (iconResource != null) 50.dp else 45.dp)
         )
 
-        // Dropdown arrow
+        // Pfeil-Icon
         Icon(
-            painter = painterResource(id = if (iconResource != null) R.drawable.chevrondown2 else R.drawable.chevrondown1),
-            contentDescription = "dropdown",
+            painter = painterResource(
+                id = if (iconResource != null) R.drawable.chevrondown2 else R.drawable.chevrondown1
+            ),
+            contentDescription = null,
             tint = Color.White.copy(alpha = 0.95f),
             modifier = Modifier
                 .align(Alignment.CenterEnd)
@@ -155,11 +158,11 @@ fun LocationDropdown(
         )
     }
 
-    // Dropdown menu
+    // Dropdown-Liste
     if (isExpanded) {
         Box(
-            modifier = Modifier
-                .offset(y = dropdownOffset)
+            modifier = modifier
+                .offset(y = dropdownOffset + 120.dp)
                 .requiredWidth(350.dp)
                 .zIndex(3f)
         ) {
