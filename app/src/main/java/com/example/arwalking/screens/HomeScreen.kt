@@ -185,7 +185,7 @@ fun HomeScreen(
             dropdownOffset = 260.dp
         )
 
-        // Start Button
+        // Start Button - HIER IST DIE ÄNDERUNG
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -224,8 +224,8 @@ fun HomeScreen(
                         spotColor = Color.Black.copy(alpha = 0.3f)
                     )
                     .clickable {
-                        // Navigation zu AR Screen
-                        // navController.navigate("ar_view")
+                        // Navigation zur Camera
+                        navController.navigate("camera_navigation")
                     }
             )
 

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import com.example.app.navigation.CameraNavigation
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -46,12 +47,16 @@ fun ARWalkingApp() {
         composable("home") {
             HomeScreen(navController = navController)
         }
+        composable("camera_navigation") {
+            CameraNavigation()
+        }
+
+
         // Hier können später weitere Screens hinzugefügt werden:
         // composable("ar_view") { ARScreen(navController = navController) }
         // composable("settings") { SettingsScreen(navController = navController) }
     }
 }
-
 @Preview(showBackground = true)
 @Composable
 private fun ARWalkingAppPreview() {
