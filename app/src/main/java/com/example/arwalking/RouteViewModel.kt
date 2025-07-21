@@ -1,4 +1,4 @@
-// RouteViewModel.kt
+// RouteViewModel.kt (erweitert)
 package com.example.arwalking
 
 import RouteData
@@ -11,65 +11,74 @@ class RouteViewModel : ViewModel() {
 
     private val TAG = "RouteViewModel"
 
-    // JSON-Parsing-Logik
-    fun loadAndParseRoute(context: Context) {
-        try {
+    // Die neue Funktion die das NavigationRoute-Objekt zurückgibt
+    fun loadNavigationRoute(context: Context): NavigationRoute? {
+        return try {
             Log.i(TAG, "Route wird geladen...")
 
-            // JSON aus Assets laden
+            // JSON laden und parsen (wie vorher)
             val jsonString = loadJSONFromAsset(context, "route.json")
-
-            // JSON mit Gson parsen
             val gson = Gson()
             val routeData = gson.fromJson(jsonString, RouteData::class.java)
 
-            // Wegbeschreibung extrahieren und loggen
-            extractAndLogRoute(routeData)
+            // In NavigationRoute umwandeln
+            convertToNavigationRoute(routeData)
 
         } catch (e: Exception) {
             Log.e(TAG, "Fehler beim Laden der Route: ${e.message}")
+            null
         }
     }
 
-    private fun loadJSONFromAsset(context: Context, filename: String): String {
-        return context.assets.open(filename).bufferedReader().use { it.readText() }
-    }
-
-    private fun extractAndLogRoute(routeData: RouteData) {
-        Log.i(TAG, "=== WEGBESCHREIBUNG START ===")
-        Log.i(TAG, "Gesamte Routenlänge: ${routeData.route.routeInfo.routeLength} Meter")
-        Log.i(TAG, "")
-
+    // Konvertierung von RouteData zu NavigationRoute
+    private fun convertToNavigationRoute(routeData: RouteData): NavigationRoute {
+        val steps = mutableListOf<NavigationStep>()
         var stepNumber = 1
 
         routeData.route.path.forEach { pathItem ->
-            Log.i(TAG, "Gebäude: ${pathItem.xmlName}")
-
             pathItem.routeParts.forEach { routePart ->
-                // Instruction loggen
-                Log.i(TAG, "Schritt $stepNumber: ${routePart.instructionDe}")
+                val landmarkIds = routePart.landmarks.map { it.id }
 
-                // Landmarks zu diesem Schritt
-                if (routePart.landmarks.isNotEmpty()) {
-                    Log.i(TAG, "  Landmarks:")
-                    routePart.landmarks.forEach { landmark ->
-                        Log.i(TAG, "    - ID: ${landmark.id}")
-                        Log.i(TAG, "      Name: ${landmark.nameDe}")
-                        Log.i(TAG, "      Typ: ${landmark.type}")
-                        Log.i(TAG, "      Position: (${landmark.x}, ${landmark.y})")
-                        landmark.lsf?.let {
-                            Log.i(TAG, "      LSF: $it")
-                        }
-                    }
-                } else {
-                    Log.i(TAG, "  Keine Landmarks")
-                }
+                val step = NavigationStep(
+                    stepNumber = stepNumber,
+                    instruction = routePart.instructionDe,
+                    building = pathItem.xmlName,
+                    landmarkIds = landmarkIds
+                )
 
-                Log.i(TAG, "")
+                steps.add(step)
                 stepNumber++
             }
         }
 
-        Log.i(TAG, "=== WEGBESCHREIBUNG ENDE ===")
+        return NavigationRoute(
+            totalLength = routeData.route.routeInfo.routeLength,
+            steps = steps
+        )
+    }
+
+    // Optional: Für Debugging - die alte Logging-Funktion angepasst
+    fun logNavigationRoute(navigationRoute: NavigationRoute) {
+        Log.i(TAG, "=== NAVIGATION ROUTE START ===")
+        Log.i(TAG, "Gesamte Routenlänge: ${navigationRoute.totalLength} Meter")
+        Log.i(TAG, "Anzahl Schritte: ${navigationRoute.steps.size}")
+        Log.i(TAG, "")
+
+        navigationRoute.steps.forEach { step ->
+            Log.i(TAG, "Schritt ${step.stepNumber}: ${step.instruction}")
+            Log.i(TAG, "  Gebäude: ${step.building}")
+            if (step.landmarkIds.isNotEmpty()) {
+                Log.i(TAG, "  Landmark IDs: ${step.landmarkIds.joinToString(", ")}")
+            } else {
+                Log.i(TAG, "  Keine Landmarks")
+            }
+            Log.i(TAG, "")
+        }
+
+        Log.i(TAG, "=== NAVIGATION ROUTE ENDE ===")
+    }
+
+    private fun loadJSONFromAsset(context: Context, filename: String): String {
+        return context.assets.open(filename).bufferedReader().use { it.readText() }
     }
 }
