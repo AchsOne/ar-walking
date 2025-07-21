@@ -1,27 +1,34 @@
-package com.example.arwalking
-
-data class RouteWrapper(
-    val route: RouteData
+data class RouteData(
+    val route: Route
 )
 
-data class RouteData(
-    val path: List<PathItem>
+data class Route(
+    val path: List<PathItem>,
+    val routeInfo: RouteInfo
 )
 
 data class PathItem(
+    val xmlName: String,
     val routeParts: List<RoutePart>
 )
 
 data class RoutePart(
     val instruction: String,
+    val instructionEn: String,
+    val instructionDe: String,
     val landmarks: List<Landmark>
 )
 
 data class Landmark(
     val id: String,
+    val nameDe: String,
+    val nameEn: String,
     val type: String,
     val x: String,
     val y: String,
-    val nameDe: String?,
-    val nameEn: String?
+    val lsf: String? = null
+)
+
+data class RouteInfo(
+    val routeLength: Double
 )

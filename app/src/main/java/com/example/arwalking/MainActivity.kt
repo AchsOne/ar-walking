@@ -1,5 +1,6 @@
 package com.example.arwalking
 
+import RouteData
 import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -21,12 +22,21 @@ import com.example.arwalking.ui.theme.ARWalkingTheme
 
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.ViewModelProvider
 import com.google.gson.Gson
 
-
 class MainActivity : ComponentActivity() {
+
+    private val TAG = "RouteActivity"
+
+    private lateinit var routeViewModel: RouteViewModel
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // ViewModel erstellen
+        routeViewModel = ViewModelProvider(this)[RouteViewModel::class.java]
+
         enableEdgeToEdge()
         setContent {
             ARWalkingTheme {
@@ -38,21 +48,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        loadRouteParts(this)
-    }
-    private fun loadRouteParts(context: Context) {
-        val jsonString = loadJSONFromAsset(context, "route.json")
-        val gson = Gson()
-        val routeWrapper = gson.fromJson(jsonString, RouteWrapper::class.java)
-
-        val routeParts = routeWrapper.route.path.firstOrNull()?.routeParts ?: emptyList()
-
-        for ((index, part) in routeParts.withIndex()) {
-            Log.d("RoutePart", "Schritt ${index + 1}: ${part.instruction}")
-            for (landmark in part.landmarks) {
-                Log.d("Landmark", " → ID: ${landmark.id}, Typ: ${landmark.type}, x: ${landmark.x}, y: ${landmark.y}")
-            }
-        }
+        routeViewModel.loadAndParseRoute(this)
     }
 }
 
