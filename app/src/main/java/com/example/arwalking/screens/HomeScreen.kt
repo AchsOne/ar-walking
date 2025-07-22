@@ -7,6 +7,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,8 +35,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -50,6 +55,7 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.example.arwalking.R
 import com.example.arwalking.components.LocationDropdown
+
 
 @Composable
 fun HomeScreen(
@@ -98,7 +104,37 @@ fun HomeScreen(
     }
 
     Box(
-        modifier = modifier.fillMaxSize()
+        modifier = modifier
+            .fillMaxSize()
+            .pointerInput(startDropdownExpanded, destinationDropdownExpanded) {
+                detectTapGestures { offset ->
+                    // Bereich für Start-Dropdown (oben)
+                    val startDropdownArea = Rect(
+                        offset = Offset(
+                            x = (size.width - 350.dp.toPx()) / 2,
+                            y = size.height / 2 - 150.dp.toPx() - 25.dp.toPx()
+                        ),
+                        size = Size(350.dp.toPx(), 250.dp.toPx()) // Feld + Dropdown-Bereich
+                    )
+
+                    // Bereich für Destination-Dropdown (unten)
+                    val destinationDropdownArea = Rect(
+                        offset = Offset(
+                            x = (size.width - 350.dp.toPx()) / 2,
+                            y = size.height / 2 - 90.dp.toPx() - 25.dp.toPx() - 250.dp.toPx()
+                        ),
+                        size = Size(350.dp.toPx(), 300.dp.toPx()) // Feld + Dropdown-Bereich (nach oben)
+                    )
+
+                    // Wenn außerhalb der Dropdown-Bereiche geklickt wird, schließen
+                    if (startDropdownExpanded && !startDropdownArea.contains(offset)) {
+                        startDropdownExpanded = false
+                    }
+                    if (destinationDropdownExpanded && !destinationDropdownArea.contains(offset)) {
+                        destinationDropdownExpanded = false
+                    }
+                }
+            }
     ) {
         // Background Image
         Image(
@@ -181,29 +217,41 @@ fun HomeScreen(
         LocationDropdown(
             modifier = Modifier
                 .align(Alignment.Center)
-                .offset(y = (-150).dp),
+                .offset(y = (-170).dp),
             selectedText = selectedStart,
             options = startOptions,
             isExpanded = startDropdownExpanded,
-            onExpandedChange = { startDropdownExpanded = it },
+            onExpandedChange = {
+                startDropdownExpanded = it
+
+                // Schließe das andere Dropdown wenn dieses geöffnet wird
+                if (it && destinationDropdownExpanded) {
+                    destinationDropdownExpanded = false
+                }
+            },
             onOptionSelected = { selectedStart = it },
-            iconResource = null, // Blue dot will be drawn directly
-            dropdownOffset = (-29).dp
+            iconResource = null // Blue dot will be drawn directly
         )
 
         // Destination Location Dropdown
         LocationDropdown(
             modifier = Modifier
                 .align(Alignment.Center)
-                .offset(y = -90.dp),
+                .offset(y = 170.dp),
             selectedText = selectedDestination,
             options = destinationOptions,
             isExpanded = destinationDropdownExpanded,
-            onExpandedChange = { destinationDropdownExpanded = it },
+            onExpandedChange = {
+                destinationDropdownExpanded = it
+                // Schließe das andere Dropdown wenn dieses geöffnet wird
+                if (it && startDropdownExpanded) {
+                    startDropdownExpanded = false
+                }
+            },
             onOptionSelected = { selectedDestination = it },
             iconResource = R.drawable.mappin1,
             iconTint = Color(0xffff4757),
-            dropdownOffset = 260.dp
+
         )
 
         // Start Button
