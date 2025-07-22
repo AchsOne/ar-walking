@@ -55,7 +55,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        checkCameraAndLaunch()
+        // Entferne checkCameraAndLaunch() - wird über Navigation gehandhabt
         setContent {
             ARWalkingTheme {
                 Surface(

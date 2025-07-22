@@ -1,6 +1,8 @@
 package com.example.arwalking.screens
-
-import androidx.compose.foundation.BorderStroke
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -12,7 +14,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
@@ -23,7 +24,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,21 +32,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.graphics.Shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.example.arwalking.R
@@ -76,6 +75,28 @@ fun HomeScreen(
         "Parkplatz (coming soon)"
     )
 
+    val context = LocalContext.current
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            navController.navigate("camera_navigation")
+        }
+    }
+
+    fun navigateWithPermission() {
+        if (
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            navController.navigate("camera_navigation")
+        } else {
+            cameraLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
     Box(
         modifier = modifier.fillMaxSize()
     ) {
@@ -91,12 +112,12 @@ fun HomeScreen(
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .requiredWidth(412.dp)
+                .fillMaxWidth()
                 .requiredHeight(200.dp)
                 .background(
                     brush = Brush.verticalGradient(
                         colors = listOf(
-                            Color.Black.copy(alpha = 0.3f),
+                            Color.Black.copy(alpha = 0.6f),
                             Color.Transparent
                         )
                     )
@@ -185,7 +206,7 @@ fun HomeScreen(
             dropdownOffset = 260.dp
         )
 
-        // Start Button - HIER IST DIE ÄNDERUNG
+        // Start Button
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -224,8 +245,8 @@ fun HomeScreen(
                         spotColor = Color.Black.copy(alpha = 0.3f)
                     )
                     .clickable {
-                        // Navigation zur Camera
-                        navController.navigate("camera_navigation")
+                        // Navigation mit Kamera-Permission Check
+                        navigateWithPermission()
                     }
             )
 
