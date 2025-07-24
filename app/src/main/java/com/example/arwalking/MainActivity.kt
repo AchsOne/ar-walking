@@ -12,7 +12,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import com.example.app.navigation.CameraNavigation
@@ -25,8 +24,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.arwalking.screens.HomeScreen
 import com.example.arwalking.ui.theme.ARWalkingTheme
+import android.util.Log
+import androidx.lifecycle.ViewModelProvider
 
 class MainActivity : ComponentActivity() {
+
+    private lateinit var routeViewModel: RouteViewModel
+
 
     private val cameraPermissionLauncher: ActivityResultLauncher<String> =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -54,6 +58,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // ViewModel erstellen
+        routeViewModel = ViewModelProvider(this)[RouteViewModel::class.java]
+
         enableEdgeToEdge()
         // Entferne checkCameraAndLaunch() - wird über Navigation gehandhabt
         setContent {
@@ -65,6 +72,16 @@ class MainActivity : ComponentActivity() {
                     ARWalkingApp()
                 }
             }
+        }
+        val navigationRoute = routeViewModel.loadNavigationRoute(this)
+        if (navigationRoute != null) {
+            // Objekt ist bereit für weitere Verwendung
+            routeViewModel.logNavigationRoute(navigationRoute)
+            // weitere verwendung von navigationRoute....
+
+
+        } else {
+            Log.e("MainActivity", "Fehler beim Laden der Route")
         }
     }
 }

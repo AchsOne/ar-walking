@@ -1,0 +1,38 @@
+package com.example.arwalking.data
+
+import RouteData
+import android.content.Context
+import com.google.gson.Gson
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+class RouteRepository(private val context: Context) {
+
+    private val gson = Gson()
+
+    // Aktuell: JSON aus Assets laden
+    suspend fun getRouteFromAssets(filename: String): RouteData? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val jsonString = context.assets.open(filename).bufferedReader().use { it.readText() }
+                gson.fromJson(jsonString, RouteData::class.java)
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    // Später: API-Call
+    suspend fun getRouteFromApi(startPoint: String, endPoint: String): RouteData? {
+        return withContext(Dispatchers.IO) {
+            try {
+                // Hier wird später der API-Call implementiert
+                // val response = apiService.getRoute(startPoint, endPoint)
+                // gson.fromJson(response, RouteData::class.java)
+                null
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+}
