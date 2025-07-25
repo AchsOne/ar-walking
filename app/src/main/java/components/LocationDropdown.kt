@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -39,12 +41,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -55,6 +61,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import com.example.arwalking.R
 import android.graphics.RenderEffect as AndroidRenderEffect
 
@@ -68,258 +77,305 @@ fun LocationDropdown(
     onOptionSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
     iconResource: Int? = null,
-    iconTint: Color = Color.White,
+    iconTint: Color = Color(0xFF4285F4),
     dropdownOffset: Dp = 8.dp
 ) {
     val density = LocalDensity.current
-
-    // 1. Chevron‑Rotation
-    val chevronRotation by animateFloatAsState(
-        targetValue = if (isExpanded) 180f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        )
-    )
-
-    // 2. Höhe animieren
-    val dropdownHeight = remember { Animatable(0f) }
-    val maxDropdownHeight = with(density) { (options.size * 44 + 8).dp.toPx() }
-    LaunchedEffect(isExpanded) {
-        if (isExpanded) {
-            dropdownHeight.animateTo(
-                maxDropdownHeight,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessHigh
-                )
-            )
-        } else {
-            dropdownHeight.animateTo(0f, animationSpec = tween(200))
+    
+    // Suchfunktionalität
+    val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
+    var searchText by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+    var shouldFocusSearch by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
+    val filteredOptions = if (searchText.isEmpty()) options else options.filter {
+        it.contains(searchText, ignoreCase = true)
+    }
+    
+    // Dropdown-Dimensionen
+    val dropdownMinHeight = 120.dp
+    val dropdownMaxHeight = 250.dp // Reduziert von 300.dp auf 200.dp
+    val scrollStateDropdown = rememberScrollState()
+    
+    // Suchfeld fokussieren nur wenn über Textfeld-Click geöffnet wird
+    LaunchedEffect(isExpanded, shouldFocusSearch) {
+        if (isExpanded && shouldFocusSearch) {
+            focusRequester.requestFocus()
+        }
+        // State zurücksetzen wenn Dropdown geschlossen wird
+        if (!isExpanded) {
+            shouldFocusSearch = true // Default wieder auf true setzen
         }
     }
 
-    // 3. Alpha & Scale
-    val dropdownAlpha by animateFloatAsState(
-        targetValue = if (isExpanded) 1f else 0f,
-        animationSpec = if (isExpanded) tween(300, delayMillis = 100) else tween(150)
-    )
-    val dropdownScale by animateFloatAsState(
-        targetValue = if (isExpanded) 1f else 0.95f,
+    // Refined animations with Apple-style easing
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (isExpanded) 180f else 0f,
         animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessHigh
+            dampingRatio = 0.75f,
+            stiffness = 400f
         )
     )
 
-    // 4. Scroll‑State
+    // Height animation with smooth Google Maps-style expansion
+    val dropdownHeight = remember { Animatable(0f) }
+    val calculatedHeight = with(density) { 
+        val contentHeight = if (filteredOptions.isEmpty()) {
+            // Minimale Höhe für "Keine Ergebnisse" Text (Apple-Stil)
+            64.dp
+        } else {
+            (filteredOptions.size * 44 + 8).dp // Apple-typische Item-Höhe
+        }
+        contentHeight.coerceIn(dropdownMinHeight, dropdownMaxHeight).toPx()
+    }
+    LaunchedEffect(isExpanded, filteredOptions.size) {
+        if (isExpanded) {
+            dropdownHeight.animateTo(
+                calculatedHeight,
+                animationSpec = spring(
+                    dampingRatio = 0.8f,
+                    stiffness = 300f
+                )
+            )
+        } else {
+            dropdownHeight.animateTo(0f, animationSpec = tween(250))
+        }
+    }
+
+    // Apple-style fade and scale
+    val dropdownAlpha by animateFloatAsState(
+        targetValue = if (isExpanded) 1f else 0f,
+        animationSpec = if (isExpanded) tween(350, delayMillis = 50) else tween(200)
+    )
+    val dropdownScale by animateFloatAsState(
+        targetValue = if (isExpanded) 1f else 0.92f,
+        animationSpec = spring(
+            dampingRatio = 0.75f,
+            stiffness = 350f
+        )
+    )
+
+    // Button scale animation (Apple-style press effect)
+    val buttonScale by animateFloatAsState(
+        targetValue = if (isExpanded) 0.98f else 1f,
+        animationSpec = spring(
+            dampingRatio = 0.8f,
+            stiffness = 500f
+        )
+    )
+
     val scrollState = rememberScrollState()
 
-    // 5. Trigger‑Box
     Box(
         modifier = modifier
             .requiredWidth(350.dp)
             .requiredHeight(50.dp)
     ) {
-        // 5a. Hintergrund‑Box (Feld)
+        // Apple-Style Hintergrund
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(25.dp))
-                // Blur‑Effekt über graphicsLayer
-                .graphicsLayer {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        renderEffect = AndroidRenderEffect.createBlurEffect(
-                            20f,
-                            20f,
-                            Shader.TileMode.CLAMP
-                        ).asComposeRenderEffect()
-                    }
-                }
-                .background(
-                    brush = Brush.verticalGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.35f),
-                            Color.White.copy(alpha = 0.15f),
-                            Color.White.copy(alpha = 0.25f)
-                        )
-                    )
-                )
+                .scale(buttonScale)
+                .clip(RoundedCornerShape(16.dp)) // Apple-typische Rundung
+                .background(Color.White)
                 .border(
-                    1.5.dp,
-                    brush = Brush.verticalGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.6f),
-                            Color.White.copy(alpha = 0.2f),
-                            Color.White.copy(alpha = 0.4f)
-                        )
-                    ),
-                    RoundedCornerShape(25.dp)
+                    width = 0.5.dp,
+                    color = Color(0xFFD1D1D6), // Apple's separator color
+                    RoundedCornerShape(16.dp)
                 )
                 .shadow(
-                    elevation = 10.dp,
-                    shape = RoundedCornerShape(25.dp),
-                    ambientColor = Color.Black.copy(alpha = 0.1f),
-                    spotColor = Color.Black.copy(alpha = 0.1f)
+                    elevation = 2.dp,
+                    shape = RoundedCornerShape(16.dp),
+                    ambientColor = Color.Black.copy(alpha = 0.04f),
+                    spotColor = Color.Black.copy(alpha = 0.08f)
                 )
-                .clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() }
-                ) { onExpandedChange(!isExpanded) }
-        ) {
-            // hier kommt dein eigentlicher Content rein (Icon, Text o.Ä.)
-        }
+        )
 
-        // 5b. Icon oder Dot
+        // Apple-Style Icon
         if (iconResource != null) {
             Icon(
                 painter = painterResource(iconResource),
                 contentDescription = null,
-                tint = iconTint,
+                tint = Color(0xFFE31B0D), // Apple Blue
                 modifier = Modifier
                     .align(Alignment.CenterStart)
-                    .offset(x = 20.dp)
-                    .requiredWidth(20.dp)
-                    .requiredHeight(20.dp)
+                    .offset(x = 16.dp)
+                    .requiredSize(20.dp)
             )
         } else {
+            // Apple-Style Location Indicator
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
-                    .offset(x = 20.dp)
+                    .offset(x = 18.dp)
                     .requiredSize(12.dp)
                     .clip(CircleShape)
-                    .background(Color(0xff00a8e8))
+                    .background(Color(0xFF007AFF)) // Apple Blue
             )
         }
 
-        // 5c. Text
-        Text(
-            text = selectedText,
-            color = Color.White.copy(alpha = 0.95f),
-            style = TextStyle(
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Normal,
-                shadow = Shadow(
-                    Color.Black.copy(alpha = 0.5f),
-                    Offset(1f, 1f),
-                    blurRadius = 3f
+        // Suchfeld anstatt Text
+        androidx.compose.material3.TextField(
+            value = searchText,
+            onValueChange = { newValue ->
+                searchText = newValue
+                if (newValue.isNotEmpty() && !isExpanded) {
+                    shouldFocusSearch = true
+                    onExpandedChange(true)
+                }
+            },
+            placeholder = { 
+                Text(
+                    text = selectedText,
+                    color = Color(0xFF8E8E93), // Apple's tertiary label color
+                    style = TextStyle(
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Normal
+                    )
                 )
-            ),
+            },
             modifier = Modifier
-                .align(Alignment.CenterStart)
-                .offset(x = if (iconResource != null) 50.dp else 45.dp)
+                .fillMaxSize()
+                .focusRequester(focusRequester)
+                .onFocusChanged { focusState ->
+                    if (focusState.isFocused && !isExpanded) {
+                        shouldFocusSearch = true
+                        onExpandedChange(true)
+                    }
+                }
+                .padding(
+                    start = if (iconResource != null) 44.dp else 38.dp,
+                ),
+            singleLine = true,
+            colors = androidx.compose.material3.TextFieldDefaults.colors(
+                focusedContainerColor = Color.Transparent,
+                unfocusedContainerColor = Color.Transparent,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                cursorColor = Color(0xFF007AFF) // Apple Blue
+            ),
+            textStyle = TextStyle(
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Normal,
+                color = Color(0xFF000000) // Apple's primary label color
+            )
         )
 
-        // 5d. Chevron
+        // Apple-Style Chevron
         Icon(
             painter = painterResource(
                 id = if (iconResource != null) R.drawable.chevrondown2 else R.drawable.chevrondown1
             ),
             contentDescription = null,
-            tint = Color.White.copy(alpha = 0.95f),
+            tint = Color(0xFF8E8E93), // Apple's tertiary label color
             modifier = Modifier
                 .align(Alignment.CenterEnd)
-                .offset(x = (-20).dp)
+                .offset(x = (-16).dp)
                 .rotate(chevronRotation)
+                .requiredSize(16.dp)
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) { 
+                    shouldFocusSearch = false // Kein Fokus beim Chevron-Click
+                    onExpandedChange(!isExpanded) 
+                }
         )
 
-        // 6. Dropdown im Popup
+        // Dropdown-Implementierung mit Suchfeld und Pressed-Effekt
+
         if (dropdownHeight.value > 0f) {
             val yOffset = with(density) { (50.dp + dropdownOffset).roundToPx() }
             Popup(
                 offset = IntOffset(0, yOffset),
-                properties = PopupProperties(clippingEnabled = false)
+                properties = PopupProperties(
+                    clippingEnabled = false,
+                    dismissOnBackPress = true,
+                    dismissOnClickOutside = true
+                )
             ) {
                 Box(
                     modifier = Modifier
                         .requiredWidth(350.dp)
-                        .height(with(density) { dropdownHeight.value.toDp() })
+                        .height(
+                            with(density) {
+                                val contentHeight = if (filteredOptions.isEmpty()) {
+                                    64.dp // Apple-Stil
+                                } else {
+                                    (filteredOptions.size * 44 + 8).dp // Apple-typische Item-Höhe
+                                }
+                                contentHeight.coerceIn(dropdownMinHeight, dropdownMaxHeight)
+                            }
+                        )
                         .alpha(dropdownAlpha)
                         .scale(dropdownScale)
                 ) {
-                    // Blur-Hintergrund (unterste Ebene)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(16.dp))
-                            .graphicsLayer {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                    renderEffect = AndroidRenderEffect.createBlurEffect(
-                                        25f,
-                                        25f,
-                                        Shader.TileMode.CLAMP
-                                    ).asComposeRenderEffect()
-                                }
-                            }
-                    )
-
-                    // Dropdown-Inhalt (oberste Ebene)
+                    // Apple-Style Dropdown
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .verticalScroll(scrollState)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(
-                                brush = Brush.verticalGradient(
-                                    listOf(
-                                        Color.Black.copy(alpha = 0.45f),
-                                        Color.Black.copy(alpha = 0.25f),
-                                        Color.Black.copy(alpha = 0.4f)
-                                    )
-                                )
-                            )
+                            .clip(RoundedCornerShape(16.dp)) // Apple-typische Rundung
+                            .background(Color.White)
                             .border(
-                                1.5.dp,
-                                brush = Brush.verticalGradient(
-                                    listOf(
-                                        Color.White.copy(alpha = 0.7f),
-                                        Color.White.copy(alpha = 0.3f),
-                                        Color.White.copy(alpha = 0.5f)
-                                    )
-                                ),
+                                width = 0.5.dp,
+                                color = Color(0xFFD1D1D6), // Apple's separator color
                                 RoundedCornerShape(16.dp)
                             )
+                            .shadow(
+                                elevation = 8.dp,
+                                shape = RoundedCornerShape(16.dp),
+                                ambientColor = Color.Black.copy(alpha = 0.04f),
+                                spotColor = Color.Black.copy(alpha = 0.08f)
+                            )
                             .padding(vertical = 4.dp)
+                            .verticalScroll(scrollStateDropdown)
                     ) {
-                        options.forEachIndexed { index, option ->
-                            val optionAlpha by animateFloatAsState(
-                                targetValue = if (isExpanded) 1f else 0f,
-                                animationSpec = if (isExpanded)
-                                    tween(200, delayMillis = index * 30 + 150)
-                                else tween(100)
-                            )
-                            val optionTranslateY by animateFloatAsState(
-                                targetValue = if (isExpanded) 0f else -10f,
-                                animationSpec = if (isExpanded)
-                                    spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium)
-                                else tween(150)
-                            )
+                        if (filteredOptions.isEmpty()) {
+                            // Apple-Style "Keine Ergebnisse"
                             Text(
-                                text = option,
-                                color = Color.White.copy(alpha = 0.95f),
+                                text = "Keine Ergebnisse gefunden",
+                                color = Color(0xFF8E8E93), // Apple's tertiary label color
                                 style = TextStyle(
-                                    fontSize = 16.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    shadow = Shadow(
-                                        Color.Black.copy(alpha = 0.4f),
-                                        Offset(1f, 1f),
-                                        blurRadius = 2f
-                                    )
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Normal
                                 ),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .alpha(optionAlpha)
-                                    .graphicsLayer { translationY = optionTranslateY }
-                                    .clickable(
-                                        indication = null,
-                                        interactionSource = remember { MutableInteractionSource() }
-                                    ) {
-                                        onOptionSelected(option)
-                                        onExpandedChange(false)
-                                    }
-                                    .padding(vertical = 12.dp, horizontal = 16.dp)
+                                    .padding(vertical = 16.dp, horizontal = 16.dp)
                             )
+                        } else {
+                            filteredOptions.forEach { option ->
+                                val interactionSource = remember { MutableInteractionSource() }
+                                val isPressed by interactionSource.collectIsPressedAsState()
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (isPressed) Color(0xFFF2F2F7) // Apple's quaternary system fill
+                                            else Color.Transparent
+                                        )
+                                        .clickable(
+                                            interactionSource = interactionSource,
+                                            indication = null
+                                        ) {
+                                            onOptionSelected(option)
+                                            onExpandedChange(false)
+                                            searchText = option // Suchtext auf ausgewählte Option setzen
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = option,
+                                        color = Color(0xFF000000), // Apple's primary label color
+                                        style = TextStyle(
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Normal
+                                        ),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 12.dp, horizontal = 12.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }

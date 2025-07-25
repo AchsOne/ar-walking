@@ -12,19 +12,21 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import com.example.app.navigation.CameraNavigation
+import com.example.arwalking.screens.CameraNavigation
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.arwalking.screens.HomeScreen
+import com.example.arwalking.screens.LocalNavController
 import com.example.arwalking.ui.theme.ARWalkingTheme
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 
 class MainActivity : ComponentActivity() {
 
@@ -73,20 +75,24 @@ class MainActivity : ComponentActivity() {
 fun ARWalkingApp() {
     val navController = rememberNavController()
 
-    NavHost(
-        navController = navController,
-        startDestination = "home"
-    ) {
-        composable("home") {
-            HomeScreen(navController = navController)
-        }
-        composable("camera_navigation") {
-            CameraNavigation()
-        }
+    CompositionLocalProvider(LocalNavController provides navController) {
+        NavHost(
+            navController = navController,
+            startDestination = "home"
+        ) {
+            composable("home") {
+                HomeScreen(navController = navController)
+            }
+            composable("camera_navigation/{destination}") { backStackEntry ->
+                val encodedDestination = backStackEntry.arguments?.getString("destination") ?: "Unbekanntes Ziel"
+                val destination = URLDecoder.decode(encodedDestination, StandardCharsets.UTF_8.toString())
+                CameraNavigation(destination = destination)
+            }
 
-        // Hier können später weitere Screens hinzugefügt werden:
-        // composable("ar_view") { ARScreen(navController = navController) }
-        // composable("settings") { SettingsScreen(navController = navController) }
+            // Hier können später weitere Screens hinzugefügt werden:
+            // composable("ar_view") { ARScreen(navController = navController) }
+            // composable("settings") { SettingsScreen(navController = navController) }
+        }
     }
 }
 

@@ -55,6 +55,8 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.example.arwalking.R
 import com.example.arwalking.components.LocationDropdown
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 
 @Composable
@@ -71,10 +73,23 @@ fun HomeScreen(
         "Büro Prof. Dr. Wolff (PT 3.0.60)",
         "Büro Prof. Dr. Ludwig (PT 3.0.84C) ",
         "Mensa (coming soon)",
+        "Parkplatz (coming soon)",
+        "Parkplatz (coming soon)",
+        "Büro Prof. Dr. Wolff (PT 3.0.60)",
+        "Büro Prof. Dr. Ludwig (PT 3.0.84C) ",
+        "Mensa (coming soon)",
         "Parkplatz (coming soon)"
     )
 
     val destinationOptions = listOf(
+        "Büro Prof. Dr. Wolff (PT 3.0.60)",
+        "Büro Prof. Dr. Ludwig (PT 3.0.84C) ",
+        "Mensa (coming soon)",
+        "Parkplatz (coming soon)",
+        "Büro Prof. Dr. Wolff (PT 3.0.60)",
+        "Büro Prof. Dr. Ludwig (PT 3.0.84C) ",
+        "Mensa (coming soon)",
+        "Parkplatz (coming soon)",
         "Büro Prof. Dr. Wolff (PT 3.0.60)",
         "Büro Prof. Dr. Ludwig (PT 3.0.84C) ",
         "Mensa (coming soon)",
@@ -86,7 +101,9 @@ fun HomeScreen(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            navController.navigate("camera_navigation")
+            val destination = if (selectedDestination != "Ziel suchen...") selectedDestination else "Unbekanntes Ziel"
+            val encodedDestination = URLEncoder.encode(destination, StandardCharsets.UTF_8.toString())
+            navController.navigate("camera_navigation/$encodedDestination")
         }
     }
 
@@ -97,7 +114,9 @@ fun HomeScreen(
                 Manifest.permission.CAMERA
             ) == PackageManager.PERMISSION_GRANTED
         ) {
-            navController.navigate("camera_navigation")
+            val destination = if (selectedDestination != "Ziel suchen...") selectedDestination else "Unbekanntes Ziel"
+            val encodedDestination = URLEncoder.encode(destination, StandardCharsets.UTF_8.toString())
+            navController.navigate("camera_navigation/$encodedDestination")
         } else {
             cameraLauncher.launch(Manifest.permission.CAMERA)
         }
@@ -250,7 +269,7 @@ fun HomeScreen(
             },
             onOptionSelected = { selectedDestination = it },
             iconResource = R.drawable.mappin1,
-            iconTint = Color(0xffff4757),
+            iconTint = Color(0xFFD31526),
 
         )
 
