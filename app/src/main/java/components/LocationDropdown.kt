@@ -43,6 +43,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -65,10 +67,13 @@ fun LocationDropdown(
     modifier: Modifier = Modifier,
     iconResource: Int? = null,
     iconTint: Color = Color(0xFF4285F4),
-    dropdownOffset: Dp = 8.dp
+    dropdownOffset: Dp = 8.dp,
+    expandUpward: Boolean = false
 ) {
     val density = LocalDensity.current
-    
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
     // Suchfunktionalität
     val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
     var searchText by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
@@ -76,12 +81,12 @@ fun LocationDropdown(
     val filteredOptions = if (searchText.isEmpty()) options else options.filter {
         it.contains(searchText, ignoreCase = true)
     }
-    
+
     // Dropdown-Dimensionen
     val dropdownMinHeight = 120.dp
     val dropdownMaxHeight = 250.dp // Reduziert von 300.dp auf 200.dp
     val scrollStateDropdown = rememberScrollState()
-    
+
     // Suchfeld fokussieren nur wenn über Textfeld-Click geöffnet wird
     LaunchedEffect(isExpanded, shouldFocusSearch) {
         if (isExpanded && shouldFocusSearch) {
@@ -104,7 +109,7 @@ fun LocationDropdown(
 
     // Height animation with smooth Google Maps-style expansion
     val dropdownHeight = remember { Animatable(0f) }
-    val calculatedHeight = with(density) { 
+    val calculatedHeight = with(density) {
         val contentHeight = if (filteredOptions.isEmpty()) {
             // Minimale Höhe für "Keine Ergebnisse" Text (Apple-Stil)
             64.dp
@@ -209,7 +214,7 @@ fun LocationDropdown(
                     onExpandedChange(true)
                 }
             },
-            placeholder = { 
+            placeholder = {
                 Text(
                     text = selectedText,
                     color = Color(0xFF8E8E93), // Apple's tertiary label color
@@ -261,23 +266,41 @@ fun LocationDropdown(
                 .clickable(
                     indication = null,
                     interactionSource = remember { MutableInteractionSource() }
-                ) { 
+                ) {
                     shouldFocusSearch = false // Kein Fokus beim Chevron-Click
-                    onExpandedChange(!isExpanded) 
+                    if (isExpanded) {
+                        // Beim Schließen über Chevron auch Tastatur schließen
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
+                    }
+                    onExpandedChange(!isExpanded)
                 }
         )
 
         // Dropdown-Implementierung mit Suchfeld und Pressed-Effekt
 
         if (dropdownHeight.value > 0f) {
-            val yOffset = with(density) { (50.dp + dropdownOffset).roundToPx() }
+            val yOffset = with(density) {
+                if (expandUpward) {
+                    // Nach oben expandieren - Dropdown oberhalb des Eingabefelds
+                    val dropdownHeightPx = calculatedHeight
+                    -(dropdownHeightPx + dropdownOffset.toPx()).toInt()
+                } else {
+                    // Nach unten expandieren (Standard)
+                    (50.dp + dropdownOffset).roundToPx()
+                }
+            }
             Popup(
                 offset = IntOffset(0, yOffset),
                 properties = PopupProperties(
                     clippingEnabled = false,
                     dismissOnBackPress = true,
                     dismissOnClickOutside = true
-                )
+                ),
+                onDismissRequest = {
+                    // Nur das Dropdown schließen, Tastatur kann weiterhin verwendet werden
+                    onExpandedChange(false)
+                }
             ) {
                 Box(
                     modifier = Modifier
@@ -347,6 +370,9 @@ fun LocationDropdown(
                                             onOptionSelected(option)
                                             onExpandedChange(false)
                                             searchText = option // Suchtext auf ausgewählte Option setzen
+                                            // Tastatur und Fokus schließen nach Auswahl
+                                            keyboardController?.hide()
+                                            focusManager.clearFocus()
                                         }
                                         .padding(horizontal = 8.dp, vertical = 2.dp)
                                 ) {

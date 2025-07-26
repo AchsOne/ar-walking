@@ -43,6 +43,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -97,6 +103,18 @@ fun HomeScreen(
     )
 
     val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    val density = LocalDensity.current
+
+    // Tastatur-Höhe detection
+    val imeInsets = WindowInsets.ime
+    val isKeyboardVisible by remember {
+        derivedStateOf {
+            imeInsets.getBottom(density) > 0
+        }
+    }
+    val keyboardHeight = with(density) { imeInsets.getBottom(this).toDp() }
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -125,33 +143,28 @@ fun HomeScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .pointerInput(startDropdownExpanded, destinationDropdownExpanded) {
+            .pointerInput(Unit) {
                 detectTapGestures { offset ->
-                    // Bereich für Start-Dropdown (oben)
-                    val startDropdownArea = Rect(
-                        offset = Offset(
-                            x = (size.width - 350.dp.toPx()) / 2,
-                            y = size.height / 2 - 150.dp.toPx() - 25.dp.toPx()
-                        ),
-                        size = Size(350.dp.toPx(), 250.dp.toPx()) // Feld + Dropdown-Bereich
-                    )
-
-                    // Bereich für Destination-Dropdown (unten)
-                    val destinationDropdownArea = Rect(
-                        offset = Offset(
-                            x = (size.width - 350.dp.toPx()) / 2,
-                            y = size.height / 2 - 90.dp.toPx() - 25.dp.toPx() - 250.dp.toPx()
-                        ),
-                        size = Size(350.dp.toPx(), 300.dp.toPx()) // Feld + Dropdown-Bereich (nach oben)
-                    )
-
-                    // Wenn außerhalb der Dropdown-Bereiche geklickt wird, schließen
-                    if (startDropdownExpanded && !startDropdownArea.contains(offset)) {
+                    val centerY = size.height / 2
+                    val clickY = offset.y
+                    
+                    // Definiere einfache Y-Bereiche
+                    val startAreaTop = centerY - 220.dp.toPx()
+                    val startAreaBottom = centerY - 120.dp.toPx()
+                    val destinationAreaTop = centerY + 120.dp.toPx()
+                    val destinationAreaBottom = centerY + 220.dp.toPx()
+                    val buttonAreaTop = size.height - 280.dp.toPx()
+                    
+                    // Schließe Dropdowns wenn außerhalb geklickt
+                    if (startDropdownExpanded && (clickY < startAreaTop || clickY > startAreaBottom)) {
                         startDropdownExpanded = false
                     }
-                    if (destinationDropdownExpanded && !destinationDropdownArea.contains(offset)) {
+                    
+                    if (destinationDropdownExpanded && (clickY < destinationAreaTop || clickY > destinationAreaBottom)) {
                         destinationDropdownExpanded = false
                     }
+                    
+
                 }
             }
     ) {
@@ -247,6 +260,8 @@ fun HomeScreen(
                 if (it && destinationDropdownExpanded) {
                     destinationDropdownExpanded = false
                 }
+
+                // Keyboard bleibt offen für weitere Eingaben
             },
             onOptionSelected = { selectedStart = it },
             iconResource = null // Blue dot will be drawn directly
@@ -266,11 +281,13 @@ fun HomeScreen(
                 if (it && startDropdownExpanded) {
                     startDropdownExpanded = false
                 }
+
+                // Keyboard bleibt offen für weitere Eingaben
             },
             onOptionSelected = { selectedDestination = it },
             iconResource = R.drawable.mappin1,
             iconTint = Color(0xFFD31526),
-
+            expandUpward = true // Dropdown nach oben klappen
         )
 
         // Start Button
