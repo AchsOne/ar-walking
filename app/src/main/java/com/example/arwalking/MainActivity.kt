@@ -83,10 +83,15 @@ fun ARWalkingApp() {
             composable("home") {
                 HomeScreen(navController = navController)
             }
-            composable("camera_navigation/{destination}") { backStackEntry ->
+            composable("camera_navigation/{destination}/{startLocation}") { backStackEntry ->
                 val encodedDestination = backStackEntry.arguments?.getString("destination") ?: "Unbekanntes Ziel"
+                val encodedStartLocation = backStackEntry.arguments?.getString("startLocation") ?: "Unbekannter Start"
                 val destination = URLDecoder.decode(encodedDestination, StandardCharsets.UTF_8.toString())
-                CameraNavigation(destination = destination)
+                val startLocation = URLDecoder.decode(encodedStartLocation, StandardCharsets.UTF_8.toString())
+                CameraNavigation(
+                    destination = destination,
+                    startLocation = startLocation
+                )
             }
 
             // Hier können später weitere Screens hinzugefügt werden:

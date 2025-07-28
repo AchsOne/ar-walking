@@ -12,21 +12,23 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,10 +36,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -47,10 +57,11 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.arwalking.R
+import com.example.arwalking.data.FavoritesRepository
 import components.NavigationDrawer
 import components.NavigationStepData
 
-// CompositionLocal for the main NavController
+
 val LocalNavController = staticCompositionLocalOf<NavController> {
     error("No NavController provided")
 }
@@ -61,7 +72,10 @@ sealed class Screen(val route: String) {
 }
 
 @Composable
-fun CameraNavigation(destination: String = "Unbekanntes Ziel") {
+fun CameraNavigation(
+    destination: String = "Unbekanntes Ziel",
+    startLocation: String = "Unbekannter Start"
+) {
     val navController = rememberNavController()
     val mainNavController = LocalNavController.current
 
@@ -70,13 +84,21 @@ fun CameraNavigation(destination: String = "Unbekanntes Ziel") {
         startDestination = Screen.Camera.route
     ) {
         composable(Screen.Camera.route) {
-            CameraScreen(mainNavController = mainNavController, destination = destination)
+            CameraScreen(
+                mainNavController = mainNavController, 
+                destination = destination,
+                startLocation = startLocation
+            )
         }
     }
 }
 
 @Composable
-fun CameraScreen(mainNavController: NavController, destination: String = "Unbekanntes Ziel") {
+fun CameraScreen(
+    mainNavController: NavController, 
+    destination: String = "Unbekanntes Ziel",
+    startLocation: String = "Unbekannter Start"
+) {
     val context = LocalContext.current
     val activity = context as Activity
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -121,7 +143,11 @@ fun CameraScreen(mainNavController: NavController, destination: String = "Unbeka
             )
 
             // AR Walking UI Overlay
-            ARWalkingUIOverlay(mainNavController = mainNavController, destination = destination)
+            ARWalkingUIOverlay(
+                mainNavController = mainNavController, 
+                destination = destination,
+                startLocation = startLocation
+            )
 
         } else {
             // Klick-Box zum Anfordern der Berechtigung
@@ -161,43 +187,116 @@ fun CameraScreen(mainNavController: NavController, destination: String = "Unbeka
 }
 
 @Composable
-fun ARWalkingUIOverlay(mainNavController: NavController, destination: String = "Unbekanntes Ziel") {
+fun ARWalkingUIOverlay(
+    mainNavController: NavController, 
+    destination: String = "Unbekanntes Ziel",
+    startLocation: String = "Unbekannter Start"
+) {
+    // Check if current route is a favorite (reactive)
+    val favorites by FavoritesRepository.favorites.collectAsState()
+    val isFavorite = favorites.any { 
+        it.startLocation == startLocation && it.destination == destination 
+    }
+    
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
-        // Property1Variant2 (Top left corner element) - verbesserte Positionierung
-        Property1Variant2(
-            modifier = Modifier
-                .align(alignment = Alignment.TopStart)
-                .offset(x = 16.dp, y = 60.dp) // Mehr Abstand von oben und links
-        )
-
-        // AR Logo Section - verbesserte Positionierung
+        // Semi-transparent black gradient at the top
         Box(
             modifier = Modifier
-                .align(alignment = Alignment.TopCenter)
-                .offset(y = 70.dp) // Mehr Abstand von oben
-                .requiredWidth(width = 201.dp)
-                .requiredHeight(height = 75.dp)
+                .fillMaxWidth()
+                .requiredHeight(300.dp)
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.6f),
+                            Color.Black.copy(alpha = 0.25f),
+                            Color.Transparent
+                        ),
+                        startY = 0f,
+                        endY = 800f
+                    )
+                )
+        )
+
+        // Top bar with back button and destination text
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .offset(y = 70.dp)
+                .padding(horizontal = 20.dp)
         ) {
-            Image(
-                painter = painterResource(id = R.drawable.logo),
-                contentDescription = "image 1",
+            // Back button
+            Icon(
+                painter = painterResource(id = R.drawable.chevron_left_1),
+                contentDescription = "Back",
+                tint = Color.White,
                 modifier = Modifier
-                    .requiredWidth(width = 201.dp)
-                    .requiredHeight(height = 75.dp)
+                    .align(Alignment.CenterStart)
+                    .size(35.dp)
+                    .clickable {
+                        mainNavController.navigate("home") {
+                            popUpTo("home") { inclusive = true }
+                        }
+                    }
+                    .padding(4.dp) // Padding for better touch target
             )
+
+            // Destination text
             Text(
-                text = "AR",
-                color = Color(0xff94ad0b),
-                style = MaterialTheme.typography.headlineLarge,
+                text = destination,
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                maxLines = 3, // Erlaube bis zu 3 Zeilen
+                overflow = TextOverflow.Ellipsis,
+                lineHeight = 20.sp, // Zeilenhöhe für bessere Lesbarkeit
                 modifier = Modifier
-                    .align(alignment = Alignment.TopStart)
-                    .offset(x = 60.dp, y = 6.dp)
+                    .align(Alignment.Center)
+                    .fillMaxWidth(0.7f)
+                    .drawBehind {
+                        drawIntoCanvas { canvas ->
+                            val shadowPaint = Paint().apply {
+                                color = Color.Black.copy(alpha = 0.5f)
+                                isAntiAlias = true
+                            }
+                            // Simple shadow effect by drawing the text slightly offset
+                        }
+                    }
+            )
+
+            Icon(
+                painter = painterResource(
+                    id = if (isFavorite) R.drawable.star_filled else R.drawable.star_outline
+                ),
+                contentDescription = if (isFavorite) "Remove from favorites" else "Add to favorites",
+                tint = Color.Unspecified, // Use the colors from the drawable
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .size(35.dp)
+                    .clickable {
+                        if (isFavorite) {
+                            // Find and remove the favorite
+                            val favorites = FavoritesRepository.favorites.value
+                            val favoriteToRemove = favorites.find { 
+                                it.startLocation == startLocation && it.destination == destination 
+                            }
+                            favoriteToRemove?.let {
+                                FavoritesRepository.removeFavorite(it)
+                            }
+                        } else {
+                            // Add to favorites
+                            FavoritesRepository.addFavorite(startLocation, destination)
+                        }
+                    }
+                    .padding(4.dp)
             )
         }
 
         // Drawer Panel
+        // TODO: Hier JSON Route übergeben
         val navigationSteps = listOf(
             NavigationStepData("Durch die Tür", R.drawable.door),
             NavigationStepData("Gerade am Fahrstuhl vorbei", R.drawable.arrow_up_1),
@@ -209,16 +308,11 @@ fun ARWalkingUIOverlay(mainNavController: NavController, destination: String = "
             NavigationStepData("Durch die Tür", R.drawable.arrow_up_1)
         )
 
-        // Navigation Drawer - komplett bündig am unteren Bildschirmrand
+        // Navigation Drawer
         NavigationDrawer(
             navigationSteps = navigationSteps,
             destinationLabel = destination,
-            onClose = {
-                // Navigate back to home screen
-                mainNavController.navigate("home") {
-                    popUpTo("home") { inclusive = true }
-                }
-            },
+            onClose = { /* Close functionality moved to back button */ },
             modifier = Modifier
                 .align(alignment = Alignment.BottomCenter)
         )
@@ -260,13 +354,17 @@ fun CameraPreviewView(
 
     if (cameraError != null) {
         Box(
-            modifier = modifier.background(Color.Black),
+            modifier = modifier
+                .fillMaxSize()
+                .background(Color.Black),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = "Kamera-Fehler: $cameraError",
                 color = Color.White,
-                modifier = Modifier.padding(16.dp)
+                fontSize = 16.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(24.dp)
             )
         }
         return

@@ -43,8 +43,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.platform.LocalFocusManager
+
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -71,8 +70,6 @@ fun LocationDropdown(
     expandUpward: Boolean = false
 ) {
     val density = LocalDensity.current
-    val keyboardController = LocalSoftwareKeyboardController.current
-    val focusManager = LocalFocusManager.current
 
     // Suchfunktionalität
     val focusRequester = remember { androidx.compose.ui.focus.FocusRequester() }
@@ -95,6 +92,7 @@ fun LocationDropdown(
         // State zurücksetzen wenn Dropdown geschlossen wird
         if (!isExpanded) {
             shouldFocusSearch = true // Default wieder auf true setzen
+            searchText = "" // Suchtext zurücksetzen
         }
     }
 
@@ -268,11 +266,6 @@ fun LocationDropdown(
                     interactionSource = remember { MutableInteractionSource() }
                 ) {
                     shouldFocusSearch = false // Kein Fokus beim Chevron-Click
-                    if (isExpanded) {
-                        // Beim Schließen über Chevron auch Tastatur schließen
-                        keyboardController?.hide()
-                        focusManager.clearFocus()
-                    }
                     onExpandedChange(!isExpanded)
                 }
         )
@@ -298,7 +291,7 @@ fun LocationDropdown(
                     dismissOnClickOutside = true
                 ),
                 onDismissRequest = {
-                    // Nur das Dropdown schließen, Tastatur kann weiterhin verwendet werden
+                    // Dropdown schließen
                     onExpandedChange(false)
                 }
             ) {
@@ -370,9 +363,6 @@ fun LocationDropdown(
                                             onOptionSelected(option)
                                             onExpandedChange(false)
                                             searchText = option // Suchtext auf ausgewählte Option setzen
-                                            // Tastatur und Fokus schließen nach Auswahl
-                                            keyboardController?.hide()
-                                            focusManager.clearFocus()
                                         }
                                         .padding(horizontal = 8.dp, vertical = 2.dp)
                                 ) {
