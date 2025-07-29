@@ -8,8 +8,11 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.AspectRatio
+import androidx.camera.core.Camera
+import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
+import androidx.camera.core.ZoomState
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
@@ -112,6 +115,10 @@ fun CameraScreen(
         )
     }
     var showRationaleDialog by remember { mutableStateOf(false) }
+    
+    // Zoom state management
+    var currentZoomRatio by remember { mutableStateOf(1.0f) }
+    var availableZoomRatios by remember { mutableStateOf(listOf(0.7f, 1.0f, 2.0f)) }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -139,14 +146,23 @@ fun CameraScreen(
             // Live-Kameravorschau
             CameraPreviewView(
                 modifier = Modifier.fillMaxSize(),
-                lifecycleOwner = lifecycleOwner
+                lifecycleOwner = lifecycleOwner,
+                zoomRatio = currentZoomRatio,
+                onAvailableZoomRatiosChanged = { ratios ->
+                    availableZoomRatios = ratios
+                }
             )
 
             // AR Walking UI Overlay
             ARWalkingUIOverlay(
                 mainNavController = mainNavController, 
                 destination = destination,
-                startLocation = startLocation
+                startLocation = startLocation,
+                availableZoomRatios = availableZoomRatios,
+                currentZoomRatio = currentZoomRatio,
+                onZoomChange = { newZoomRatio ->
+                    currentZoomRatio = newZoomRatio
+                }
             )
 
         } else {
@@ -190,7 +206,10 @@ fun CameraScreen(
 fun ARWalkingUIOverlay(
     mainNavController: NavController, 
     destination: String = "Unbekanntes Ziel",
-    startLocation: String = "Unbekannter Start"
+    startLocation: String = "Unbekannter Start",
+    availableZoomRatios: List<Float> = listOf(0.7f, 1.0f, 2.0f),
+    currentZoomRatio: Float = 1.0f,
+    onZoomChange: (Float) -> Unit = {}
 ) {
     // Check if current route is a favorite (reactive)
     val favorites by FavoritesRepository.favorites.collectAsState()
@@ -313,6 +332,9 @@ fun ARWalkingUIOverlay(
             navigationSteps = navigationSteps,
             destinationLabel = destination,
             onClose = { /* Close functionality moved to back button */ },
+            availableZoomRatios = availableZoomRatios,
+            currentZoomRatio = currentZoomRatio,
+            onZoomChange = onZoomChange,
             modifier = Modifier
                 .align(alignment = Alignment.BottomCenter)
         )
@@ -347,10 +369,25 @@ fun Property1Default(modifier: Modifier = Modifier) {
 @Composable
 fun CameraPreviewView(
     modifier: Modifier = Modifier,
-    lifecycleOwner: LifecycleOwner
+    lifecycleOwner: LifecycleOwner,
+    zoomRatio: Float = 1.0f,
+    onAvailableZoomRatiosChanged: (List<Float>) -> Unit = {}
 ) {
     val context = LocalContext.current
     var cameraError by remember { mutableStateOf<String?>(null) }
+    var camera by remember { mutableStateOf<Camera?>(null) }
+    
+    // Apply zoom changes to camera when zoomRatio changes
+    LaunchedEffect(zoomRatio) {
+        camera?.let { cam ->
+            try {
+                cam.cameraControl.setZoomRatio(zoomRatio)
+                Log.d("CameraZoom", "Zoom applied: ${zoomRatio}x")
+            } catch (e: Exception) {
+                Log.e("CameraZoom", "Failed to apply zoom: ${zoomRatio}x", e)
+            }
+        }
+    }
 
     if (cameraError != null) {
         Box(
@@ -400,11 +437,20 @@ fun CameraPreviewView(
                             cameraProvider.unbindAll()
 
                             // Kamera an Lifecycle binden
-                            cameraProvider.bindToLifecycle(
+                            val boundCamera = cameraProvider.bindToLifecycle(
                                 lifecycleOwner,
                                 cameraSelector,
                                 preview
                             )
+
+                            // Store camera reference for zoom control
+                            camera = boundCamera
+
+                            // Setup zoom capabilities
+                            setupZoomCapabilities(boundCamera, onAvailableZoomRatiosChanged)
+                            
+                            // Apply initial zoom
+                            boundCamera.cameraControl.setZoomRatio(zoomRatio)
 
                             Log.d("CameraPreview", "Kamera erfolgreich initialisiert")
 
@@ -421,4 +467,47 @@ fun CameraPreviewView(
             }
         }
     )
+}
+
+// Helper function to setup zoom capabilities
+private fun setupZoomCapabilities(camera: Camera, onAvailableZoomRatiosChanged: (List<Float>) -> Unit) {
+    val cameraInfo: CameraInfo = camera.cameraInfo
+    val zoomState = cameraInfo.zoomState.value
+    
+    if (zoomState != null) {
+        val minZoom = zoomState.minZoomRatio
+        val maxZoom = zoomState.maxZoomRatio
+        
+        Log.d("CameraZoom", "Zoom range: $minZoom - $maxZoom")
+        
+        // Define zoom ratios based on device capabilities
+        val availableZoomRatios = mutableListOf<Float>()
+        
+        // Add ultra-wide/panorama if available (typically < 1.0)
+        if (minZoom < 1.0f) {
+            val ultraWideZoom = maxOf(minZoom, 0.5f) // Use minimum or 0.5x, whichever is higher
+            availableZoomRatios.add(ultraWideZoom)
+        }
+        
+        // Always add 1x (normal)
+        availableZoomRatios.add(1.0f)
+        
+        // Add 2x zoom if available
+        if (maxZoom >= 2.0f) {
+            availableZoomRatios.add(2.0f)
+        }
+        
+        // If no ultra-wide but maxZoom allows, add a wider angle option
+        if (minZoom >= 1.0f && availableZoomRatios.size < 3) {
+            // Use 0.7x as a digital wide-angle approximation
+            availableZoomRatios.add(0, 0.7f)
+        }
+        
+        Log.d("CameraZoom", "Available zoom ratios: $availableZoomRatios")
+        onAvailableZoomRatiosChanged(availableZoomRatios)
+    } else {
+        // Fallback if zoom state is not available
+        Log.w("CameraZoom", "Zoom state not available, using default ratios")
+        onAvailableZoomRatiosChanged(listOf(0.7f, 1.0f, 2.0f))
+    }
 }

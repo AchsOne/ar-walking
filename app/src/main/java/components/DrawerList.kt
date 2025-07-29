@@ -56,7 +56,10 @@ fun NavigationDrawer(
     navigationSteps: List<NavigationStepData>,
     destinationLabel: String,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    availableZoomRatios: List<Float> = listOf(0.7f, 1.0f, 2.0f),
+    currentZoomRatio: Float = 1.0f,
+    onZoomChange: (Float) -> Unit = {}
 ) {
     var isMaximized by remember { mutableStateOf(false) }
     var offsetY by remember { mutableStateOf(0f) }
@@ -150,30 +153,93 @@ fun NavigationDrawer(
                 .width(40.dp)
                 .height(4.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(Color.White.copy(alpha = 0.4f))
+                .background(Color.White.copy(alpha = 0.8f))
         )
 
-        // Logo in place of close button - bigger size
+        // Header area with optimized UX layout
+        // Logo positioned on the left
         Box(
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .offset(x = 25.dp, y = 15.dp)
-                .size(60.dp), // Increased from 48dp to 60dp
+                .offset(x = 20.dp, y = 7.dp)
+                .size(85.dp),
             contentAlignment = Alignment.Center
         ) {
             Image(
                 painter = painterResource(id = R.drawable.logo),
                 contentDescription = "Logo",
-                modifier = Modifier.size(85.dp) // Increased from 70dp to 85dp
+                modifier = Modifier.size(90.dp)
             )
         }
 
-        // Maximize/Minimize button
+        // Zoom Level Switcher (Snapchat-style) with round elements - centered
+        val currentZoomIndex = availableZoomRatios.indexOfFirst { it == currentZoomRatio }.takeIf { it >= 0 } ?: 1
+        val zoomLabels = availableZoomRatios.map { ratio ->
+            when {
+                ratio < 1.0f -> {
+                    val formatted = if (ratio == 0.5f) "0.5x" else String.format("%.1fx", ratio)
+                    formatted
+                }
+                ratio == 1.0f -> "1x"
+                else -> "${ratio.toInt()}x" // e.g., "2x"
+            }
+        }
+        
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = 25.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color.Black.copy(alpha = 0.6f))
+                .border(
+                    width = 1.dp,
+                    color = Color.White.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(20.dp)
+                )
+                .padding(horizontal = 6.dp, vertical = 4.dp)
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                availableZoomRatios.forEachIndexed { index, zoomRatio ->
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp) // Make elements perfectly round
+                            .clip(CircleShape) // Round zoom switcher elements  
+                            .background(
+                                if (currentZoomIndex == index) 
+                                    Color.White.copy(alpha = 0.9f) 
+                                else 
+                                    Color.Transparent
+                            )
+                            .clickable { 
+                                onZoomChange(zoomRatio)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = zoomLabels[index],
+                            color = if (currentZoomIndex == index) 
+                                Color.Black 
+                            else 
+                                Color.White.copy(alpha = 0.8f),
+                            style = TextStyle(
+                                fontSize = 11.sp,
+                                fontWeight = if (currentZoomIndex == index) 
+                                    FontWeight.SemiBold 
+                                else 
+                                    FontWeight.Normal
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        // Maximize/Minimize button positioned on the right
         Box(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .offset(x = (-16).dp, y = 24.dp)
-                .size(36.dp)
+                .offset(x = (-20).dp, y = 25.dp)
+                .size(38.dp)
                 .clip(CircleShape)
                 .background(Color.Black.copy(alpha = 0.4f))
                 .border(
@@ -201,7 +267,7 @@ fun NavigationDrawer(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .offset(y = 90.dp) // Increased from 60dp to 90dp for more spacing with bigger logo
+                    .offset(y = 95.dp) // Adjusted for new header layout
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp)
                     .verticalScroll(rememberScrollState())
@@ -237,7 +303,7 @@ fun NavigationDrawer(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .offset(y = 90.dp) // Increased from 60dp to 90dp for consistency with expanded view
+                    .offset(y = 95.dp) // Adjusted for new header layout consistency
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp)
             ) {

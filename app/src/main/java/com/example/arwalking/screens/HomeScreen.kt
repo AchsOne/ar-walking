@@ -314,6 +314,7 @@ fun HomeScreen(
                 }
             },
             onOptionSelected = { selectedStart = it },
+            onTextChange = { selectedStart = it },
             iconResource = null // Blue dot will be drawn directly
         )
 
@@ -334,6 +335,7 @@ fun HomeScreen(
                 }
             },
             onOptionSelected = { selectedDestination = it },
+            onTextChange = { selectedDestination = it },
             iconResource = R.drawable.mappin1,
             iconTint = Color(0xFFD31526),
             expandUpward = true // Dropdown nach oben klappen
@@ -360,7 +362,7 @@ fun HomeScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 180.dp)
-                .width(220.dp)
+                .width(140.dp)
                 .height(56.dp)
                 .graphicsLayer {
                     scaleX = buttonScale
@@ -396,7 +398,7 @@ fun HomeScreen(
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "Navigation starten",
+                    text = "Starten",
                     color = Color.White,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.W600,
@@ -405,6 +407,57 @@ fun HomeScreen(
                     )
                 )
             }
+        }
+
+        // Location Finding Button (Google Maps style) - positioned in bottom right
+        val locationButtonInteractionSource = remember { MutableInteractionSource() }
+        val isLocationButtonPressed by locationButtonInteractionSource.collectIsPressedAsState()
+
+        val locationButtonScale by animateFloatAsState(
+            targetValue = if (isLocationButtonPressed) 0.9f else 1f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessHigh
+            ), label = "locationButtonScale"
+        )
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .offset(x = -20.dp, y = (-50).dp)
+                .size(56.dp)
+                .graphicsLayer {
+                    scaleX = locationButtonScale
+                    scaleY = locationButtonScale
+                }
+                .clip(CircleShape)
+                .background(Color.Black.copy(alpha = 0.4f))
+                .border(
+                    width = 0.5.dp,
+                    color = Color(0xFF0F0F86),
+                    shape = CircleShape
+                )
+                .shadow(
+                    elevation = 8.dp,
+                    shape = CircleShape,
+                    ambientColor = Color.Black.copy(alpha = 0.08f),
+                    spotColor = Color.Black.copy(alpha = 0.12f)
+                )
+                .clickable(
+                    interactionSource = locationButtonInteractionSource,
+                    indication = null
+                ) {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    // TODO: Add location finding functionality here
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                painter = painterResource(id = R.drawable.location_searching),
+                contentDescription = "Find current location",
+                tint = Color(0xFF94AD0C),
+                modifier = Modifier.size(24.dp)
+            )
         }
 
         // Menu Overlay
@@ -489,27 +542,3 @@ private fun HomeScreenPreview() {
     HomeScreen(navController = rememberNavController())
 }
 
-@Composable
-fun isKeyboardVisible(): Boolean {
-    val context = LocalContext.current
-    val activity = remember(context) {
-        context as? android.app.Activity
-    } ?: return false
-    val rootView = activity.window.decorView
-    val visibleHeight = remember { mutableStateOf(0) }
-
-    DisposableEffect(Unit) {
-        val listener = android.view.ViewTreeObserver.OnGlobalLayoutListener {
-            val rect = android.graphics.Rect()
-            rootView.getWindowVisibleDisplayFrame(rect)
-            val heightDiff = rootView.rootView.height - rect.height()
-            visibleHeight.value = heightDiff
-        }
-        rootView.viewTreeObserver.addOnGlobalLayoutListener(listener)
-        onDispose {
-            rootView.viewTreeObserver.removeOnGlobalLayoutListener(listener)
-        }
-    }
-
-    return visibleHeight.value > 300
-}

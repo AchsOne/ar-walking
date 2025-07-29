@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.example.arwalking"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.arwalking"
@@ -48,6 +48,8 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
+    // For KeyboardOptions and KeyboardActions:
+    implementation("androidx.compose.ui:ui-text:1.7.6")
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
