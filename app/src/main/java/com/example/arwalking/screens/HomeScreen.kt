@@ -1,5 +1,6 @@
 package com.example.arwalking.screens
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -72,6 +73,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import com.example.arwalking.OpenCvCameraActivity
 import kotlinx.coroutines.delay
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -408,6 +410,41 @@ fun HomeScreen(
                 )
             }
         }
+        /**
+        Card(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 110.dp) // Weniger Abstand als der andere
+                .width(140.dp)
+                .height(56.dp)
+                .clickable {
+                    context.startActivity(Intent(context, OpenCvCameraActivity::class.java))
+                },
+            colors = CardDefaults.cardColors(
+                containerColor = Color(0xFF0F66C5) // andere Farbe
+            ),
+            elevation = CardDefaults.cardElevation(
+                defaultElevation = 8.dp
+            ),
+            shape = RoundedCornerShape(28.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "OpenCV Test",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.W600
+                )
+            }
+        }
+        **/
 
         // Location Finding Button (Google Maps style) - positioned in bottom right
         val locationButtonInteractionSource = remember { MutableInteractionSource() }

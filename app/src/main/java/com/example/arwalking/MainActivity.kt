@@ -28,7 +28,10 @@ import com.example.arwalking.ui.theme.ARWalkingTheme
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import android.util.Log
+import android.widget.Toast
 import androidx.lifecycle.ViewModelProvider
+import org.opencv.android.NativeCameraView.TAG
+import org.opencv.android.OpenCVLoader
 
 class MainActivity : ComponentActivity() {
 
@@ -61,6 +64,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        if (OpenCVLoader.initLocal()) {
+            Log.i(TAG, "OpenCV loaded successfully");
+        } else {
+            Log.e(TAG, "OpenCV initialization failed!");
+            (Toast.makeText(this, "OpenCV initialization failed!", Toast.LENGTH_LONG)).show();
+            return;
+        }
+
+
+
+
         // ViewModel erstellen
         routeViewModel = ViewModelProvider(this)[RouteViewModel::class.java]
 
@@ -110,6 +125,9 @@ fun ARWalkingApp() {
                     destination = destination,
                     startLocation = startLocation
                 )
+            }
+            composable("open_cv_camera_activity") {
+                OpenCvCameraActivity();
             }
 
             // Hier können später weitere Screens hinzugefügt werden:
