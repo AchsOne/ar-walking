@@ -47,6 +47,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -84,6 +86,7 @@ fun LocationDropdown(
 ) {
     val focusManager = LocalFocusManager.current
     val density = LocalDensity.current
+    val focusRequester = remember { FocusRequester() }
     var searchText by remember { androidx.compose.runtime.mutableStateOf("") }
 
     // Hilfsfunktion für Fuzzy Matching
@@ -185,10 +188,14 @@ fun LocationDropdown(
     val dropdownMaxHeight = 250.dp // Reduziert von 300.dp auf 200.dp
     val scrollStateDropdown = rememberScrollState()
 
-    // Reset searchText when dropdown is closed
+    // Reset searchText when dropdown is closed and focus when opened
     androidx.compose.runtime.LaunchedEffect(isExpanded) {
         if (!isExpanded) {
             searchText = "" // Suchtext zurücksetzen beim Schließen
+            focusManager.clearFocus() // Fokus entfernen und Tastatur schließen
+        } else {
+            // Fokussiere das TextField und öffne die Tastatur
+            focusRequester.requestFocus()
         }
     }
 
@@ -275,6 +282,13 @@ fun LocationDropdown(
             modifier = modifier
                 .requiredWidth(350.dp)
                 .requiredHeight(50.dp)
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) {
+                    // Open dropdown when clicking anywhere on the container
+                    onExpandedChange(true)
+                }
         ) {
             // Apple-Style Hintergrund
             Box(
@@ -319,8 +333,21 @@ fun LocationDropdown(
                 )
             }
 
-            // FIXED: TextField with proper click handling
-            androidx.compose.material3.TextField(
+            // FIXED: Use BasicTextField with custom click handling
+            val textFieldInteractionSource = remember { MutableInteractionSource() }
+            
+            // Handle clicks on the text field
+            LaunchedEffect(textFieldInteractionSource) {
+                textFieldInteractionSource.interactions.collect { interaction ->
+                    when (interaction) {
+                        is androidx.compose.foundation.interaction.PressInteraction.Press -> {
+                            onExpandedChange(true)
+                        }
+                    }
+                }
+            }
+            
+            BasicTextField(
                 value = searchText,
                 onValueChange = {
                     searchText = it
@@ -328,38 +355,18 @@ fun LocationDropdown(
                         onExpandedChange(true)
                     }
                 },
-                placeholder = {
-                    Text(
-                        text = selectedText,
-                        color = Color(0xFF8E8E93),
-                        style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal)
-                    )
-                },
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(start = if (iconResource != null) 44.dp else 38.dp)
-                    .clickable(
-                        indication = null,
-                        interactionSource = remember { MutableInteractionSource() }
-                    ) {
-                        // Open dropdown when clicking on text field
-                        if (!isExpanded) {
-                            onExpandedChange(true)
-                        }
-                    },
-                singleLine = true,
-                colors = androidx.compose.material3.TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    cursorColor = Color(0xFF007AFF)
-                ),
+                    .padding(start = if (iconResource != null) 44.dp else 38.dp, end = 48.dp)
+                    .padding(vertical = 12.dp)
+                    .focusRequester(focusRequester),
                 textStyle = TextStyle(
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Normal,
                     color = Color(0xFF000000)
                 ),
+                singleLine = true,
+                interactionSource = textFieldInteractionSource,
                 keyboardOptions = KeyboardOptions(
                     imeAction = ImeAction.Done,
                     keyboardType = KeyboardType.Text
@@ -369,8 +376,37 @@ fun LocationDropdown(
                         focusManager.clearFocus()
                         onExpandedChange(false)
                     }
-                )
+                ),
+                decorationBox = { innerTextField ->
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        if (searchText.isEmpty()) {
+                            Text(
+                                text = selectedText,
+                                color = Color(0xFF8E8E93),
+                                style = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Normal)
+                            )
+                        }
+                        innerTextField()
+                    }
+                }
             )
+
+            // Invisible overlay to catch all clicks when dropdown is closed
+            if (!isExpanded) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            indication = null,
+                            interactionSource = remember { MutableInteractionSource() }
+                        ) {
+                            onExpandedChange(true)
+                        }
+                )
+            }
 
             // Apple-Style Chevron with larger clickable area
             Box(
