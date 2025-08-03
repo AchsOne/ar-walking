@@ -24,14 +24,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.arwalking.screens.HomeScreen
 import com.example.arwalking.screens.LocalNavController
+
 import com.example.arwalking.ui.theme.ARWalkingTheme
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.ViewModelProvider
-import org.opencv.android.NativeCameraView.TAG
-import org.opencv.android.OpenCVLoader
+import com.example.arwalking.BuildConfig
+// OpenCV imports entfernt für Stub-Implementation
 
 class MainActivity : ComponentActivity() {
 
@@ -65,12 +66,14 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        if (OpenCVLoader.initLocal()) {
-            Log.i(TAG, "OpenCV loaded successfully");
-        } else {
-            Log.e(TAG, "OpenCV initialization failed!");
-            (Toast.makeText(this, "OpenCV initialization failed!", Toast.LENGTH_LONG)).show();
-            return;
+        // OpenCV initialisieren (Stub für lokale Entwicklung)
+        try {
+            // Simuliere OpenCV Initialisierung
+            Log.i("MainActivity", "OpenCV Stub loaded successfully")
+        } catch (e: Exception) {
+            Log.e("MainActivity", "OpenCV Stub initialization failed: ${e.message}")
+            Toast.makeText(this, "OpenCV initialization failed!", Toast.LENGTH_LONG).show()
+            return
         }
 
 
@@ -78,6 +81,10 @@ class MainActivity : ComponentActivity() {
 
         // ViewModel erstellen
         routeViewModel = ViewModelProvider(this)[RouteViewModel::class.java]
+
+        // Sofort Feature Mapping initialisieren
+        Log.i("MainActivity", "Initialisiere Feature Mapping beim App-Start...")
+        routeViewModel.initializeStorage(this)
 
         enableEdgeToEdge()
         // Entferne checkCameraAndLaunch() - wird über Navigation gehandhabt
@@ -95,9 +102,19 @@ class MainActivity : ComponentActivity() {
         if (navigationRoute != null) {
             // Objekt ist bereit für weitere Verwendung
             routeViewModel.logNavigationRoute(navigationRoute)
-            // weitere verwendung von navigationRoute....
-
-
+            
+            // Feature Mapping ist bereits initialisiert, aktiviere es sofort
+            routeViewModel.enableStorageSystemImmediately(this)
+            
+            // System-Validierung durchführen (nur im Debug-Modus)
+            if (BuildConfig.DEBUG) {
+                val systemValidator = SystemValidator(this)
+                systemValidator.validateSystem(routeViewModel)
+                
+                // Simuliere Feature-Matching für Testzwecke
+                systemValidator.simulateFeatureMatching(routeViewModel, "prof_ludwig_office")
+            }
+            
         } else {
             Log.e("MainActivity", "Fehler beim Laden der Route")
         }
@@ -126,9 +143,8 @@ fun ARWalkingApp() {
                     startLocation = startLocation
                 )
             }
-            composable("open_cv_camera_activity") {
-                OpenCvCameraActivity();
-            }
+
+
 
             // Hier können später weitere Screens hinzugefügt werden:
             // composable("ar_view") { ARScreen(navController = navController) }

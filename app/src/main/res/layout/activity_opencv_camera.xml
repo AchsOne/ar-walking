@@ -1,7 +1,70 @@
 <?xml version="1.0" encoding="utf-8"?>
-<org.opencv.android.JavaCameraView
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/camera_view"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:visibility="visible" />
+    android:layout_height="match_parent">
+
+    <!-- OpenCV Camera View -->
+    <org.opencv.android.JavaCameraView
+        android:id="@+id/camera_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="visible" />
+
+    <!-- Feature-Mapping UI Overlay -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:background="@drawable/overlay_background">
+
+        <!-- Match Information -->
+        <TextView
+            android:id="@+id/match_info_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Suche nach Landmarks..."
+            android:textColor="@android:color/white"
+            android:textSize="14sp"
+            android:background="@drawable/text_background"
+            android:padding="12dp"
+            android:visibility="visible" />
+
+    </LinearLayout>
+
+    <!-- Bottom Controls -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:orientation="horizontal"
+        android:padding="16dp"
+        android:gravity="center"
+        android:background="@drawable/overlay_background">
+
+        <!-- Capture Training Image Button -->
+        <Button
+            android:id="@+id/capture_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Trainings-Bild erfassen"
+            android:textColor="@android:color/white"
+            android:background="@drawable/button_background"
+            android:padding="12dp"
+            android:layout_marginEnd="8dp" />
+
+        <!-- Navigation Info Button -->
+        <Button
+            android:id="@+id/nav_info_button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Navigation"
+            android:textColor="@android:color/white"
+            android:background="@drawable/button_background"
+            android:padding="12dp"
+            android:layout_marginStart="8dp" />
+
+    </LinearLayout>
+
+</RelativeLayout>

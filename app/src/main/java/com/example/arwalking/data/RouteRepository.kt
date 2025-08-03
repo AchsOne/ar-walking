@@ -1,7 +1,7 @@
 package com.example.arwalking.data
 
-import RouteData
 import android.content.Context
+import com.example.arwalking.RouteData
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

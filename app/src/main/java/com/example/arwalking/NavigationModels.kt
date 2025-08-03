@@ -2,8 +2,15 @@
 package com.example.arwalking
 
 data class NavigationRoute(
+    val id: String = "",
+    val name: String = "",
+    val description: String = "",
+    val startPoint: String = "",
+    val endPoint: String = "",
     val totalLength: Double,
-    val steps: List<NavigationStep>
+    val steps: List<NavigationStep>,
+    val totalDistance: Double = totalLength,
+    val estimatedTime: Int = 0
 )
 
 // Ein einzelner Schritt der Navigation
@@ -11,5 +18,13 @@ data class NavigationStep(
     val stepNumber: Int,
     val instruction: String,
     val building: String,
-    val landmarkIds: List<String> // Nur die IDs der Landmarks
-)
+    val floor: Int = 0,
+    val landmarks: List<RouteLandmarkData> = emptyList(),
+    val landmarkIds: List<String> = emptyList(), // Nur die IDs der Landmarks
+    val distance: Double = 0.0,
+    val estimatedTime: Int = 0
+) {
+    // Computed property to get landmark IDs from landmarks
+    val computedLandmarkIds: List<String>
+        get() = if (landmarkIds.isNotEmpty()) landmarkIds else landmarks.map { it.id }
+}

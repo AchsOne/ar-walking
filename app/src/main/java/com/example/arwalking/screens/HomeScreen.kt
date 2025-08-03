@@ -1,6 +1,5 @@
 package com.example.arwalking.screens
 import android.Manifest
-import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -37,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
+import com.example.arwalking.ui.theme.GradientUtils
 import androidx.compose.ui.graphics.Color
 
 import androidx.compose.ui.layout.ContentScale
@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,8 +53,11 @@ import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
 import com.example.arwalking.R
+import com.example.arwalking.RouteViewModel
 import com.example.arwalking.components.LocationDropdown
 import com.example.arwalking.components.MenuOverlay
+
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -68,15 +72,15 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.height
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
-import com.example.arwalking.OpenCvCameraActivity
 import kotlinx.coroutines.delay
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.util.UUID
 
 
 @Composable
@@ -90,37 +94,54 @@ fun HomeScreen(
     var selectedDestination by remember { mutableStateOf("Ziel suchen...") }
     var showMenuOverlay by remember { mutableStateOf(false) }
     var showErrorMessage by remember { mutableStateOf(false) }
+    var showRouteNotAvailableMessage by remember { mutableStateOf(false) }
     val hapticFeedback = LocalHapticFeedback.current
+    
+
+
+
+    val routeViewModel: RouteViewModel = viewModel()
+    val context = LocalContext.current
+    
+
+    
+    // Funktion zur Prüfung, ob eine Route verfügbar ist
+    fun isRouteAvailable(start: String, destination: String): Boolean {
+        val cleanStart = start.replace(" (coming soon)", "")
+        val cleanDestination = destination.replace(" (coming soon)", "")
+        
+        // Nur diese Route ist verfügbar (basierend auf der JSON-Datei)
+        // Die JSON-Route ist eine Rundroute von Prof. Ludwig's Büro
+        return (cleanStart == "Büro Prof. Dr. Ludwig (PT 3.0.84C)" && cleanDestination == "Haupteingang")
+    }
 
     val startOptions = listOf(
-        "Büro Prof. Dr. Wolff (PT 3.0.60)",
-        "Büro Prof. Dr. Ludwig (PT 3.0.84C) ",
+        "Büro Prof. Dr. Ludwig (PT 3.0.84C)",
+        "Büro Prof. Dr. Wolff (PT 3.0.60) (coming soon)",
         "Mensa (coming soon)",
         "Parkplatz (coming soon)",
-        "Test 1",
-        "Test 2",
-        "Test 3",
-        "Test 4",
-        "Ort1",
-        "Ort2",
-        "Ort3",
+        "Hörsaal A (coming soon)",
+        "Hörsaal B (coming soon)",
+        "Labor 1 (coming soon)",
+        "Labor 2 (coming soon)",
+        "Bibliothek (coming soon)",
+        "Studentensekretariat (coming soon)"
     )
 
     val destinationOptions = listOf(
-        "Büro Prof. Dr. Wolff (PT 3.0.60)",
-        "Büro Prof. Dr. Ludwig (PT 3.0.84C) ",
+        "Haupteingang",
+        "Büro Prof. Dr. Ludwig (PT 3.0.84C) (coming soon)",
+        "Büro Prof. Dr. Wolff (PT 3.0.60) (coming soon)",
         "Mensa (coming soon)",
         "Parkplatz (coming soon)",
-        "Test 1",
-        "Test 2",
-        "Test 3",
-        "Test 4",
-        "Ort1",
-        "Ort2",
-        "Ort3",
+        "Hörsaal A (coming soon)",
+        "Hörsaal B (coming soon)",
+        "Labor 1 (coming soon)",
+        "Labor 2 (coming soon)",
+        "Bibliothek (coming soon)",
+        "Studentensekretariat (coming soon)"
     )
 
-    val context = LocalContext.current
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -135,6 +156,13 @@ fun HomeScreen(
             // Validation: Check if start and destination are different
             if (selectedStart == selectedDestination) {
                 showErrorMessage = true
+                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                return@rememberLauncherForActivityResult
+            }
+
+            // Validation: Check if route is available
+            if (!isRouteAvailable(selectedStart, selectedDestination)) {
+                showRouteNotAvailableMessage = true
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                 return@rememberLauncherForActivityResult
             }
@@ -158,6 +186,13 @@ fun HomeScreen(
         // Validation: Check if start and destination are different
         if (selectedStart == selectedDestination) {
             showErrorMessage = true
+            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+            return
+        }
+
+        // Validation: Check if route is available
+        if (!isRouteAvailable(selectedStart, selectedDestination)) {
+            showRouteNotAvailableMessage = true
             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
             return
         }
@@ -186,6 +221,14 @@ fun HomeScreen(
         }
     }
 
+    // Auto-hide route not available message after 4 seconds
+    LaunchedEffect(showRouteNotAvailableMessage) {
+        if (showRouteNotAvailableMessage) {
+            delay(4000)
+            showRouteNotAvailableMessage = false
+        }
+    }
+
     Box(
         modifier = modifier.fillMaxSize()
     ) {
@@ -204,7 +247,7 @@ fun HomeScreen(
                 .fillMaxWidth()
                 .requiredHeight(200.dp)
                 .background(
-                    brush = Brush.verticalGradient(
+                    brush = GradientUtils.safeVerticalGradient(
                         colors = listOf(
                             Color.Black.copy(alpha = 0.6f),
                             Color.Transparent
@@ -220,7 +263,7 @@ fun HomeScreen(
                 .requiredWidth(412.dp)
                 .requiredHeight(200.dp)
                 .background(
-                    brush = Brush.verticalGradient(
+                    brush = GradientUtils.safeVerticalGradient(
                         colors = listOf(
                             Color.Transparent,
                             Color.Black.copy(alpha = 0.3f)
@@ -378,7 +421,7 @@ fun HomeScreen(
                     navigateWithPermission()
                 },
             colors = CardDefaults.cardColors(
-                containerColor = Color(0xFF94AD0C)
+                containerColor = Color(0xFF94AC0B)
             ),
             elevation = CardDefaults.cardElevation(
                 defaultElevation = buttonElevation.dp
@@ -410,41 +453,8 @@ fun HomeScreen(
                 )
             }
         }
-        /**
-        Card(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 110.dp) // Weniger Abstand als der andere
-                .width(140.dp)
-                .height(56.dp)
-                .clickable {
-                    context.startActivity(Intent(context, OpenCvCameraActivity::class.java))
-                },
-            colors = CardDefaults.cardColors(
-                containerColor = Color(0xFF0F66C5) // andere Farbe
-            ),
-            elevation = CardDefaults.cardElevation(
-                defaultElevation = 8.dp
-            ),
-            shape = RoundedCornerShape(28.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = "OpenCV Test",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.W600
-                )
-            }
-        }
-        **/
+        
+
 
         // Location Finding Button (Google Maps style) - positioned in bottom right
         val locationButtonInteractionSource = remember { MutableInteractionSource() }
@@ -484,7 +494,6 @@ fun HomeScreen(
                     interactionSource = locationButtonInteractionSource,
                     indication = null
                 ) {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                     // TODO: Add location finding functionality here
                 },
             contentAlignment = Alignment.Center
@@ -565,11 +574,116 @@ fun HomeScreen(
                         },
                         color = Color.White,
                         fontSize = 14.sp,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        textAlign = TextAlign.Center
                     )
                 }
             }
         }
+
+        // Apple-Style Route Not Available Message
+        androidx.compose.animation.AnimatedVisibility(
+            visible = showRouteNotAvailableMessage,
+            enter = scaleIn(
+                initialScale = 0.9f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            ) + fadeIn(
+                animationSpec = tween(400)
+            ),
+            exit = scaleOut(
+                targetScale = 0.9f,
+                animationSpec = tween(300)
+            ) + fadeOut(
+                animationSpec = tween(300)
+            ),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Card(
+                modifier = Modifier
+                    .padding(horizontal = 40.dp)
+                    .zIndex(10f),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.White
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 16.dp),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Info Icon (Apple-Style)
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .background(
+                                Color(0xFF007AFF).copy(alpha = 0.1f),
+                                CircleShape
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.alert_circle),
+                            contentDescription = "Info",
+                            tint = Color(0xFF007AFF),
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(20.dp))
+                    
+                    Text(
+                        text = "Route nicht verfügbar",
+                        color = Color.Black,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center
+                    )
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Text(
+                        text = "Diese Route ist noch nicht kartografiert.\n\nWir arbeiten daran, weitere Routen hinzuzufügen.",
+                        color = Color.Gray,
+                        fontSize = 16.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 22.sp
+                    )
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    // OK Button (Apple-Style)
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .clickable {
+                                showRouteNotAvailableMessage = false
+                            },
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFF007AFF)
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "OK",
+                                color = Color.White,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        
+
     }
 }
 

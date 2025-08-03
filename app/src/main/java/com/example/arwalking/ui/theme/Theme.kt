@@ -10,31 +10,53 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
-)
-
-private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
+    primary = ARBlueLight,
+    secondary = ARGreenLight,
+    tertiary = AROrangeLight,
+    background = ARGray900,
+    surface = ARGray800,
     onPrimary = Color.White,
     onSecondary = Color.White,
     onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    onBackground = ARGray100,
+    onSurface = ARGray100,
+    primaryContainer = ARBlueDark,
+    onPrimaryContainer = Color.White,
+    secondaryContainer = ARGreenDark,
+    onSecondaryContainer = Color.White,
+    error = ErrorRed,
+    onError = Color.White
+)
+
+private val LightColorScheme = lightColorScheme(
+    primary = ARBlue,
+    secondary = ARGreen,
+    tertiary = AROrange,
+    background = ARGray50,
+    surface = Color.White,
+    onPrimary = Color.White,
+    onSecondary = Color.White,
+    onTertiary = Color.White,
+    onBackground = ARGray900,
+    onSurface = ARGray900,
+    primaryContainer = ARBlueLight,
+    onPrimaryContainer = ARBlueDark,
+    secondaryContainer = ARGreenLight,
+    onSecondaryContainer = ARGreenDark,
+    surfaceVariant = ARGray100,
+    onSurfaceVariant = ARGray700,
+    outline = ARGray400,
+    error = ErrorRed,
+    onError = Color.White,
+    errorContainer = ARRedLight,
+    onErrorContainer = ARRedDark
 )
 
 @Composable
