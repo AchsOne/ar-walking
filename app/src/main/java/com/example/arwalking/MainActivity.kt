@@ -11,6 +11,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import com.example.arwalking.screens.CameraNavigation
@@ -24,11 +25,20 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.arwalking.screens.HomeScreen
 import com.example.arwalking.screens.LocalNavController
+
 import com.example.arwalking.ui.theme.ARWalkingTheme
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import android.util.Log
+import android.widget.Toast
+import androidx.lifecycle.lifecycleScope
+import com.example.arwalking.BuildConfig
+// OpenCV imports entfernt für Stub-Implementation
 
 class MainActivity : ComponentActivity() {
+
+    private val routeViewModel: RouteViewModel by viewModels()
+
 
     private val cameraPermissionLauncher: ActivityResultLauncher<String> =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -56,19 +66,47 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        // Entferne checkCameraAndLaunch() - wird über Navigation gehandhabt
-        setContent {
-            ARWalkingTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    ARWalkingApp()
+
+        try {
+            Log.i("MainActivity", "Starting MainActivity...")
+
+            enableEdgeToEdge()
+            
+            // UI zuerst setzen - ohne ViewModel Initialisierung
+            setContent {
+                ARWalkingTheme {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        ARWalkingApp()
+                    }
                 }
             }
+
+            // ViewModel und andere Initialisierung später und sicher
+            lifecycleScope.launch {
+                try {
+                    routeViewModel.initializeStorage(this@MainActivity)
+                    routeViewModel.loadNavigationRoute(this@MainActivity)
+                    Log.i("MainActivity", "Initialization completed")
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Initialization failed: ${'$'}{e.message}", e)
+                    Toast.makeText(
+                        this@MainActivity,
+                        "App initialization failed: ${'$'}{e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error in onCreate: ${e.message}", e)
+            Toast.makeText(this, "App initialization failed: ${e.message}", Toast.LENGTH_LONG).show()
+            // App trotzdem weiter laufen lassen
         }
     }
+
 }
 
 @Composable
@@ -93,10 +131,6 @@ fun ARWalkingApp() {
                     startLocation = startLocation
                 )
             }
-
-            // Hier können später weitere Screens hinzugefügt werden:
-            // composable("ar_view") { ARScreen(navController = navController) }
-            // composable("settings") { SettingsScreen(navController = navController) }
         }
     }
 }
