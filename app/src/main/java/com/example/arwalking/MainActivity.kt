@@ -11,10 +11,9 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import com.example.arwalking.screens.CameraNavigation
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -32,13 +31,13 @@ import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 import android.util.Log
 import android.widget.Toast
-import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import com.example.arwalking.BuildConfig
 // OpenCV imports entfernt für Stub-Implementation
 
 class MainActivity : ComponentActivity() {
 
-    private lateinit var routeViewModel: RouteViewModel
+    private val routeViewModel: RouteViewModel by viewModels()
 
 
     private val cameraPermissionLauncher: ActivityResultLauncher<String> =
@@ -86,7 +85,20 @@ class MainActivity : ComponentActivity() {
             }
 
             // ViewModel und andere Initialisierung später und sicher
-            initializeAppAsync()
+            lifecycleScope.launch {
+                try {
+                    routeViewModel.initializeStorage(this@MainActivity)
+                    routeViewModel.loadNavigationRoute(this@MainActivity)
+                    Log.i("MainActivity", "Initialization completed")
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Initialization failed: ${'$'}{e.message}", e)
+                    Toast.makeText(
+                        this@MainActivity,
+                        "App initialization failed: ${'$'}{e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
 
         } catch (e: Exception) {
             Log.e("MainActivity", "Error in onCreate: ${e.message}", e)
@@ -95,50 +107,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun initializeAppAsync() {
-        // Führe nur minimale Initialisierung durch, um Crashes zu vermeiden
-        Thread {
-            try {
-                Log.i("MainActivity", "Starting minimal async initialization...")
-                
-                // ViewModel sicher erstellen
-                runOnUiThread {
-                    try {
-                        routeViewModel = ViewModelProvider(this@MainActivity)[RouteViewModel::class.java]
-                        Log.i("MainActivity", "RouteViewModel created successfully")
-                        
-                        // Initialisierung direkt nach ViewModel-Erstellung
-                        try {
-                            routeViewModel.initializeStorage(this@MainActivity)
-                            Log.i("MainActivity", "Storage initialized")
-                        } catch (e: Exception) {
-                            Log.e("MainActivity", "Storage initialization failed: ${e.message}", e)
-                        }
-                        
-                        try {
-                            val navigationRoute = routeViewModel.loadNavigationRoute(this@MainActivity)
-                            if (navigationRoute != null) {
-                                Log.i("MainActivity", "Navigation route loaded successfully")
-                            } else {
-                                Log.w("MainActivity", "Navigation route could not be loaded")
-                            }
-                        } catch (e: Exception) {
-                            Log.e("MainActivity", "Route loading failed: ${e.message}", e)
-                        }
-                        
-                    } catch (e: Exception) {
-                        Log.e("MainActivity", "Error creating RouteViewModel: ${e.message}", e)
-                    }
-                }
-                
-                Log.i("MainActivity", "Minimal initialization completed")
-                
-            } catch (e: Exception) {
-                Log.e("MainActivity", "Error in async initialization: ${e.message}", e)
-                // App sollte trotzdem funktionieren, auch wenn Initialisierung fehlschlägt
-            }
-        }.start()
-    }
 }
 
 @Composable
