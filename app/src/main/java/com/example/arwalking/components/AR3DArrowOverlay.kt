@@ -65,7 +65,8 @@ fun AR3DArrowOverlay(
             calculateArrowDirection(
                 landmark = convertToFeatureLandmark(bestMatch.landmark!!),
                 currentStep = currentStep,
-                totalSteps = totalSteps
+                totalSteps = totalSteps,
+                currentInstruction = currentInstruction
             )
         } else {
             0f
@@ -124,40 +125,54 @@ private fun calculateArrowPosition(
 private fun calculateArrowDirection(
     landmark: com.example.arwalking.FeatureLandmark,
     currentStep: Int = 1,
-    totalSteps: Int = 3
+    totalSteps: Int = 3,
+    currentInstruction: String? = null
 ): Float {
-    // Berechne Richtung basierend auf Landmark-Typ und Position
-    val baseAngle = when {
-        // Prof. Ludwig Büro (PT-1-86) - Ausgang nach links
-        landmark.id == "PT-1-86" -> 270f // Nach links
-        
-        // Türen/Eingänge - geradeaus durch (z.B. PT-1-566, PT-1-697)
-        landmark.id.contains("PT-1-566") || landmark.id.contains("PT-1-697") -> 0f // Geradeaus
-        
-        // Allgemeine Türen basierend auf Typ
-        landmark.name.contains("Tür", ignoreCase = true) || 
-        landmark.name.contains("door", ignoreCase = true) ||
-        landmark.name.contains("Entry", ignoreCase = true) -> 0f // Geradeaus
-        
-        // Büros - nach links
-        landmark.name.contains("Prof.", ignoreCase = true) ||
-        landmark.name.contains("Office", ignoreCase = true) -> 270f // Nach links
-        
-        // Treppen - nach oben/unten
-        landmark.name.contains("stairs", ignoreCase = true) ||
-        landmark.name.contains("Treppe", ignoreCase = true) -> 45f // Diagonal nach oben
-        
-        // Aufzüge - geradeaus
-        landmark.name.contains("elevator", ignoreCase = true) ||
-        landmark.name.contains("Aufzug", ignoreCase = true) -> 0f // Geradeaus
-        
-        else -> {
-            // Dynamische Berechnung basierend auf Route-Fortschritt
-            val progress = currentStep.toFloat() / totalSteps.toFloat()
-            when {
-                progress < 0.33f -> 270f // Anfang: nach links
-                progress < 0.66f -> 0f   // Mitte: geradeaus
-                else -> 90f              // Ende: nach rechts
+    // Priorität: Verwende Navigationsanweisung wenn verfügbar
+    val baseAngle = if (currentInstruction != null) {
+        val lowerInstruction = currentInstruction.lowercase()
+        when {
+            lowerInstruction.contains("rechts") || lowerInstruction.contains("right") -> 90f // Nach rechts
+            lowerInstruction.contains("links") || lowerInstruction.contains("left") -> 270f // Nach links
+            lowerInstruction.contains("tür") || lowerInstruction.contains("door") || 
+            lowerInstruction.contains("eingang") || lowerInstruction.contains("entrance") ||
+            lowerInstruction.contains("durch") || lowerInstruction.contains("through") -> 0f // Geradeaus durch Tür
+            else -> 0f // Standard: geradeaus
+        }
+    } else {
+        // Fallback: Berechne Richtung basierend auf Landmark-Typ und Position
+        when {
+            // Prof. Ludwig Büro (PT-1-86) - Ausgang nach links
+            landmark.id == "PT-1-86" -> 270f // Nach links
+            
+            // Türen/Eingänge - geradeaus durch (z.B. PT-1-566, PT-1-697)
+            landmark.id.contains("PT-1-566") || landmark.id.contains("PT-1-697") -> 0f // Geradeaus
+            
+            // Allgemeine Türen basierend auf Typ
+            landmark.name.contains("Tür", ignoreCase = true) || 
+            landmark.name.contains("door", ignoreCase = true) ||
+            landmark.name.contains("Entry", ignoreCase = true) -> 0f // Geradeaus
+            
+            // Büros - nach links
+            landmark.name.contains("Prof.", ignoreCase = true) ||
+            landmark.name.contains("Office", ignoreCase = true) -> 270f // Nach links
+            
+            // Treppen - nach oben/unten
+            landmark.name.contains("stairs", ignoreCase = true) ||
+            landmark.name.contains("Treppe", ignoreCase = true) -> 45f // Diagonal nach oben
+            
+            // Aufzüge - geradeaus
+            landmark.name.contains("elevator", ignoreCase = true) ||
+            landmark.name.contains("Aufzug", ignoreCase = true) -> 0f // Geradeaus
+            
+            else -> {
+                // Dynamische Berechnung basierend auf Route-Fortschritt
+                val progress = currentStep.toFloat() / totalSteps.toFloat()
+                when {
+                    progress < 0.33f -> 270f // Anfang: nach links
+                    progress < 0.66f -> 0f   // Mitte: geradeaus
+                    else -> 90f              // Ende: nach rechts
+                }
             }
         }
     }
@@ -301,7 +316,8 @@ fun Animated3DArrowOverlay(
     screenHeight: Float,
     currentStep: Int = 1,
     totalSteps: Int = 3,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentInstruction: String? = null
 ) {
     val bestMatch = matches.maxByOrNull { it.confidence }
     var animationProgress by remember { mutableStateOf(0f) }
@@ -332,7 +348,8 @@ fun Animated3DArrowOverlay(
             calculateArrowDirection(
                 landmark = convertToFeatureLandmark(bestMatch.landmark!!),
                 currentStep = currentStep,
-                totalSteps = totalSteps
+                totalSteps = totalSteps,
+                currentInstruction = currentInstruction
             )
         } else {
             0f

@@ -45,7 +45,60 @@ ar-walking/
 └── gradle/                     # Gradle configuration
 ```
 
-### Key Components
+### Komponenten-Übersicht
+
+Die ArWalking-App ist modular aufgebaut und besteht aus verschiedenen spezialisierten Komponenten:
+
+#### 1. Navigation & Routing System
+- **MainActivity.kt**: Haupteinstiegspunkt der App mit Jetpack Compose Navigation
+- **HomeScreen.kt**: Startbildschirm für Routenauswahl und Zielkonfiguration
+- **Navigation.kt**: Hauptnavigationsbildschirm mit AR-Kamera-Integration
+- **RouteViewModel.kt**: Zentrale Zustandsverwaltung für Routen, Feature-Matching und Navigation
+- **RouteRepository.kt**: Lädt und verwaltet Routendaten aus JSON-Assets
+- **NavigationRoute.kt**: Datenmodelle für Navigationsrouten und -schritte
+
+#### 2. AR & Computer Vision
+- **OpenCvCameraActivity.kt**: OpenCV-basierte Kameraverarbeitung und Bildanalyse
+- **FeatureMatchingEngine.kt**: Computer-Vision-Engine für Landmark-Erkennung und Feature-Matching
+- **LandmarkFeatureStorage.kt**: Verwaltung und Speicherung von Landmark-Features und Bilddaten
+- **ARTrackingSystem.kt**: AR-Koordinatensystem-Management und Pose-Schätzung (Stub-Implementation)
+
+#### 3. UI Components & Overlays
+- **ARInfoIsland.kt**: AR-Status-Anzeige mit Scan-Status und Navigationsinformationen
+- **AR3DArrowOverlay.kt**: 3D-Pfeil-Overlay für Richtungsanweisungen
+- **Animated3DArrowOverlay.kt**: Animierte Version des 3D-Pfeils mit Bewegungseffekten
+- **FeatureMatchOverlay.kt**: Visualisierung von Feature-Matches und Erkennungsvertrauen
+- **LocationDropdown.kt**: Dropdown-Komponente für Standort- und Zielauswahl
+- **NavigationDrawer.kt**: Seitliches Navigationsmenü
+- **MenuOverlay.kt**: Overlay-Menü für zusätzliche Optionen
+- **ARScanStatus.kt**: Status-Komponente für AR-Scanning-Feedback
+
+#### 4. Storage & Data Management
+- **ArWalkingStorageManager.kt**: Zentrales Storage-System für Bilder und Metadaten
+- **LocalImageStorage.kt**: Lokale Bildspeicherung und -verwaltung
+- **OptimizedImageManager.kt**: Optimierte Bildverarbeitung und Komprimierung
+- **ProjectDirectoryImageManager.kt**: Verwaltung von Bildern im Projektverzeichnis
+- **FavoritesRepository.kt**: Speicherung und Verwaltung von Lieblingsrouten
+
+#### 5. Data Models & Structures
+- **RouteData.kt**: Datenmodelle für JSON-basierte Routendefinitionen
+- **BuildingStructure.kt**: Gebäudestruktur-Definitionen und Stockwerk-Informationen
+- **FavoriteRoute.kt**: Datenmodell für gespeicherte Lieblingsrouten
+- **FeatureLandmark.kt**: Landmark-Definitionen mit Feature-Daten
+- **FeatureNavigationRoute.kt**: Spezielle Routen für Feature-basierte Navigation
+
+#### 6. Utility & Configuration
+- **FeatureMappingConfig.kt**: Konfiguration für Feature-Mapping-Parameter
+- **JsonUtils.kt**: Hilfsfunktionen für JSON-Verarbeitung
+- **GradientUtils.kt**: UI-Hilfsfunktionen für Farbverläufe
+- **Color.kt**: App-weite Farbdefinitionen und Themes
+
+#### 7. Debug & Development
+- **LandmarkDebugOverlay.kt**: Debug-Overlay für Landmark-Entwicklung
+- **FeatureMappingStatusIndicator.kt**: Status-Indikator für Feature-Mapping-Prozesse
+- **ExpandedARInfoIsland.kt**: Erweiterte AR-Info-Anzeige für detaillierte Informationen
+
+### Key Components (Hauptkomponenten)
 
 #### 1. Navigation System
 - **MainActivity.kt**: Main entry point with Compose navigation
@@ -55,12 +108,11 @@ ar-walking/
 #### 2. AR & Computer Vision
 - **OpenCvCameraActivity.kt**: OpenCV-based camera processing
 - **FeatureMatchingEngine.kt**: Computer vision feature matching
-- **ARTrackingSystem.kt**: AR coordinate system management
 - **LandmarkFeatureStorage.kt**: Landmark data management
 
 #### 3. UI Components
 - **ARInfoIsland.kt**: AR status and information display
-- **SnapchatStyleAR3DArrow.kt**: 3D arrow navigation overlay
+- **AR3DArrowOverlay.kt**: 3D arrow navigation overlay
 - **LocationDropdown.kt**: Location selection component
 - **FeatureMatchOverlay.kt**: Feature matching visualization
 

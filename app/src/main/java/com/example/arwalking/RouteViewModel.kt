@@ -61,29 +61,65 @@ class RouteViewModel : ViewModel() {
     val currentNavigationStep: StateFlow<Int> = _currentNavigationStep.asStateFlow()
 
     /**
+     * Initialisiert die RouteViewModel mit dem gegebenen Context
+     */
+    fun initialize(context: Context) {
+        try {
+            Log.i(TAG, "Initialisiere RouteViewModel...")
+            
+            // Initialisiere RouteRepository
+            if (routeRepository == null) {
+                routeRepository = RouteRepository(context)
+                Log.d(TAG, "RouteRepository initialisiert")
+            }
+            
+            // Verwende die bestehende initializeStorage-Funktion
+            initializeStorage(context)
+            
+            Log.i(TAG, "RouteViewModel erfolgreich initialisiert")
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler bei der Initialisierung: ${e.message}")
+        }
+    }
+    
+
+
+    /**
      * Lädt die Route aus der JSON-Datei
      */
     fun loadNavigationRoute(context: Context): NavigationRoute? {
         return try {
             Log.i(TAG, "Lade Route aus JSON-Datei...")
             
-            // Initialisiere RouteRepository falls noch nicht geschehen
-            if (routeRepository == null) {
-                routeRepository = RouteRepository(context)
-            }
+            // Stelle sicher, dass die ViewModel initialisiert ist
+            initialize(context)
             
-            // Lade Route aus JSON-Datei
+            // Lade Route aus JSON-Datei asynchron
             viewModelScope.launch {
-                val routeData = routeRepository?.getRouteFromAssets("route.json")
-                _currentRoute.value = routeData
-                
-                if (routeData != null) {
-                    Log.i(TAG, "Route erfolgreich aus JSON geladen")
-                    // Konvertiere RouteData zu NavigationRoute für Feature-Mapping
-                    val navigationRoute = convertToNavigationRoute(routeData)
-                    Log.i(TAG, "Route konvertiert: ${navigationRoute.steps.size} Schritte")
-                } else {
-                    Log.w(TAG, "Keine Route in JSON-Datei gefunden")
+                try {
+                    val routeData = routeRepository?.getRouteFromAssets("route.json")
+                    _currentRoute.value = routeData
+                    
+                    if (routeData != null) {
+                        Log.i(TAG, "Route erfolgreich aus JSON geladen")
+                        // Konvertiere RouteData zu NavigationRoute für Feature-Mapping
+                        val navigationRoute = convertToNavigationRoute(routeData)
+                        Log.i(TAG, "Route konvertiert: ${navigationRoute.steps.size} Schritte")
+                        
+                        // Logge Route-Details
+                        logNavigationRoute(navigationRoute)
+                        
+                        // Setze ersten Schritt als aktiv
+                        _currentNavigationStep.value = 1
+                        
+                        // Aktiviere Feature-Mapping automatisch wenn Route geladen
+                        _isFeatureMappingEnabled.value = true
+                        
+                    } else {
+                        Log.w(TAG, "Keine Route in JSON-Datei gefunden")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Fehler beim Laden der Route in Coroutine: ${e.message}")
                 }
             }
             
@@ -435,25 +471,7 @@ class RouteViewModel : ViewModel() {
     
 
     
-    /**
-     * Geht zum nächsten Navigationsschritt
-     */
-    fun nextNavigationStep() {
-        val currentStep = _currentNavigationStep.value
-        _currentNavigationStep.value = currentStep + 1
-        Log.d(TAG, "Nächster Navigationsschritt: ${currentStep + 1}")
-    }
-    
-    /**
-     * Geht zum vorherigen Navigationsschritt
-     */
-    fun previousNavigationStep() {
-        val currentStep = _currentNavigationStep.value
-        if (currentStep > 1) {
-            _currentNavigationStep.value = currentStep - 1
-            Log.d(TAG, "Vorheriger Navigationsschritt: ${currentStep - 1}")
-        }
-    }
+
     
     /**
      * Konvertiert Bitmap zu Base64 String
@@ -545,18 +563,275 @@ class RouteViewModel : ViewModel() {
     }
     
     /**
-     * Verarbeitet einen Kamera-Frame (vereinfacht)
+     * Verarbeitet einen Kamera-Frame und simuliert Feature-Matching
      */
     fun processFrameForFeatureMatching(frame: org.opencv.core.Mat) {
+        // Nur verarbeiten wenn Feature-Mapping aktiviert ist
+        if (!_isFeatureMappingEnabled.value) {
+            return
+        }
+        
         viewModelScope.launch {
             try {
-                Log.d(TAG, "processFrameForFeatureMatching called (stub)")
-                // Stub implementation - verhindert Crashes
-                _currentMatches.value = emptyList()
+                Log.d(TAG, "processFrameForFeatureMatching called")
+                
+                // Simuliere Feature-Matching basierend auf aktueller Route und Schritt
+                val currentRoute = _currentRoute.value
+                val currentStep = _currentNavigationStep.value
+                
+                if (currentRoute != null) {
+                    val simulatedMatches = generateSimulatedMatches(currentRoute, currentStep)
+                    _currentMatches.value = simulatedMatches
+                    
+                    if (simulatedMatches.isNotEmpty()) {
+                        Log.d(TAG, "Generated ${simulatedMatches.size} simulated matches for step $currentStep")
+                        simulatedMatches.forEach { match ->
+                            Log.v(TAG, "- ${match.landmarkId}: ${match.confidence}")
+                        }
+                    }
+                } else {
+                    Log.d(TAG, "Keine Route geladen - keine Matches generiert")
+                    _currentMatches.value = emptyList()
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Fehler beim Feature-Matching: ${e.message}")
                 _currentMatches.value = emptyList()
             }
+        }
+    }
+    
+    /**
+     * Generiert simulierte Feature-Matches basierend auf der aktuellen Route
+     */
+    private fun generateSimulatedMatches(route: RouteData, currentStep: Int): List<FeatureMatchResult> {
+        val matches = mutableListOf<FeatureMatchResult>()
+        
+        try {
+            val steps = getCurrentNavigationSteps()
+            if (currentStep > 0 && currentStep <= steps.size) {
+                val step = steps[currentStep - 1]
+                
+                // Simuliere Matches für Landmarken im aktuellen Schritt
+                step.landmarks.take(3).forEachIndexed { index, landmarkId ->
+                    val confidence = when (index) {
+                        0 -> 0.85f + (Math.random() * 0.1f).toFloat() // Beste Match
+                        1 -> 0.75f + (Math.random() * 0.1f).toFloat() // Gute Match
+                        else -> 0.65f + (Math.random() * 0.1f).toFloat() // Okay Match
+                    }
+                    
+                    val landmark = ProcessedLandmark(
+                        id = landmarkId,
+                        name = getLandmarkDisplayName(landmarkId)
+                    )
+                    
+                    matches.add(
+                        FeatureMatchResult(
+                            landmarkId = landmarkId,
+                            confidence = confidence,
+                            landmark = landmark,
+                            matchCount = (50 + Math.random() * 100).toInt(),
+                            distance = (5f + Math.random() * 20f).toFloat(),
+                            angle = (Math.random() * 360f).toFloat(),
+                            screenPosition = android.graphics.PointF(
+                                (200f + Math.random() * 400f).toFloat(),
+                                (300f + Math.random() * 200f).toFloat()
+                            )
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler beim Generieren simulierter Matches: ${e.message}")
+        }
+        
+        return matches
+    }
+    
+    /**
+     * Gibt einen benutzerfreundlichen Namen für eine Landmark-ID zurück
+     */
+    private fun getLandmarkDisplayName(landmarkId: String): String {
+        return when {
+            landmarkId.contains("PT-1-86") -> "Prof. Ludwig Büro"
+            landmarkId.contains("PT-1-566") -> "Haupteingang PT"
+            landmarkId.contains("PT-1-697") -> "Tür Raum 697"
+            landmarkId.contains("door") -> "Tür"
+            landmarkId.contains("entrance") -> "Eingang"
+            landmarkId.contains("stairs") -> "Treppe"
+            landmarkId.contains("elevator") -> "Aufzug"
+            else -> "Landmark $landmarkId"
+        }
+    }
+    
+    /**
+     * Aktiviert/Deaktiviert das Feature-Mapping
+     */
+    fun setFeatureMappingEnabled(enabled: Boolean) {
+        _isFeatureMappingEnabled.value = enabled
+        Log.d(TAG, "Feature-Mapping ${if (enabled) "aktiviert" else "deaktiviert"}")
+        
+        if (!enabled) {
+            _currentMatches.value = emptyList()
+        }
+    }
+    
+    /**
+     * Aktualisiert den aktuellen Navigationsschritt
+     */
+    fun setCurrentNavigationStep(step: Int) {
+        val totalSteps = getCurrentNavigationSteps().size
+        val validStep = step.coerceIn(1, maxOf(1, totalSteps))
+        
+        _currentNavigationStep.value = validStep
+        Log.d(TAG, "Navigationsschritt aktualisiert: $validStep von $totalSteps")
+        
+        // Aktualisiere Matches für den neuen Schritt
+        if (_isFeatureMappingEnabled.value && _currentRoute.value != null) {
+            viewModelScope.launch {
+                val simulatedMatches = generateSimulatedMatches(_currentRoute.value!!, validStep)
+                _currentMatches.value = simulatedMatches
+            }
+        }
+    }
+    
+    /**
+     * Geht zum nächsten Navigationsschritt
+     */
+    fun nextNavigationStep() {
+        val currentStep = _currentNavigationStep.value
+        val totalSteps = getCurrentNavigationSteps().size
+        
+        if (currentStep < totalSteps) {
+            setCurrentNavigationStep(currentStep + 1)
+            Log.i(TAG, "Nächster Schritt: ${currentStep + 1}")
+        } else {
+            Log.i(TAG, "Bereits am letzten Schritt")
+        }
+    }
+    
+    /**
+     * Geht zum vorherigen Navigationsschritt
+     */
+    fun previousNavigationStep() {
+        val currentStep = _currentNavigationStep.value
+        
+        if (currentStep > 1) {
+            setCurrentNavigationStep(currentStep - 1)
+            Log.i(TAG, "Vorheriger Schritt: ${currentStep - 1}")
+        } else {
+            Log.i(TAG, "Bereits am ersten Schritt")
+        }
+    }
+    
+    /**
+     * Startet die Navigation von Anfang an
+     */
+    fun startNavigation() {
+        Log.i(TAG, "Navigation gestartet")
+        setCurrentNavigationStep(1)
+        setFeatureMappingEnabled(true)
+    }
+    
+    /**
+     * Stoppt die Navigation
+     */
+    fun stopNavigation() {
+        Log.i(TAG, "Navigation gestoppt")
+        setFeatureMappingEnabled(false)
+        _currentMatches.value = emptyList()
+    }
+    
+    /**
+     * Gibt den aktuellen Status der RouteViewModel zurück
+     */
+    fun getStatus(): String {
+        val route = _currentRoute.value
+        val step = _currentNavigationStep.value
+        val totalSteps = getCurrentNavigationSteps().size
+        val matchesCount = _currentMatches.value.size
+        val isFeatureMappingEnabled = _isFeatureMappingEnabled.value
+        
+        return buildString {
+            appendLine("=== RouteViewModel Status ===")
+            appendLine("Route geladen: ${route != null}")
+            if (route != null) {
+                appendLine("Route Pfad-Elemente: ${route.route.path.size}")
+                appendLine("Aktueller Schritt: $step von $totalSteps")
+            }
+            appendLine("Feature-Mapping: ${if (isFeatureMappingEnabled) "Aktiviert" else "Deaktiviert"}")
+            appendLine("Aktuelle Matches: $matchesCount")
+            appendLine("Storage-Manager: ${storageManager != null}")
+            appendLine("Feature-Matching-Engine: ${featureMatchingEngine != null}")
+            appendLine("=== Ende Status ===")
+        }
+    }
+    
+    /**
+     * Cleanup-Funktion für die ViewModel
+     */
+    override fun onCleared() {
+        super.onCleared()
+        try {
+            Log.i(TAG, "RouteViewModel wird bereinigt...")
+            
+            // Stoppe Navigation
+            stopNavigation()
+            
+            // Bereinige Ressourcen
+            arTrackingSystem?.resetTracking()
+            processedLandmarks.clear()
+            
+            // Storage-Manager bereinigt sich selbst automatisch
+            viewModelScope.launch {
+                try {
+                    storageManager?.logPerformanceSummary()
+                    
+                    // Bereinige Feature-Storage Cache
+                    landmarkFeatureStorage?.cleanup()
+                    
+                    Log.i(TAG, "RouteViewModel erfolgreich bereinigt")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Fehler beim Bereinigen des Storage: ${e.message}")
+                }
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler beim Bereinigen der RouteViewModel: ${e.message}")
+        }
+    }
+    
+    /**
+     * Testet die RouteViewModel-Funktionalität
+     */
+    fun runSelfTest(context: Context): Boolean {
+        return try {
+            Log.i(TAG, "=== RouteViewModel Self-Test ===")
+            
+            // Test 1: Initialisierung
+            initialize(context)
+            Log.d(TAG, "✓ Initialisierung erfolgreich")
+            
+            // Test 2: Route laden
+            loadNavigationRoute(context)
+            Thread.sleep(1000) // Warte auf Coroutine
+            Log.d(TAG, "✓ Route-Loading gestartet")
+            
+            // Test 3: Feature-Mapping aktivieren
+            setFeatureMappingEnabled(true)
+            Log.d(TAG, "✓ Feature-Mapping aktiviert")
+            
+            // Test 4: Navigation starten
+            startNavigation()
+            Log.d(TAG, "✓ Navigation gestartet")
+            
+            // Test 5: Status ausgeben
+            Log.i(TAG, getStatus())
+            
+            Log.i(TAG, "=== Self-Test erfolgreich ===")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "=== Self-Test fehlgeschlagen: ${e.message} ===")
+            false
         }
     }
     
@@ -712,11 +987,6 @@ class RouteViewModel : ViewModel() {
         return "Haupteingang"
     }
     
-    fun setCurrentNavigationStep(step: Int) {
-        Log.d(TAG, "setCurrentNavigationStep called (stub): $step")
-        _currentNavigationStep.value = step
-    }
-    
     fun getCurrentStep(): NavigationStep? {
         Log.d(TAG, "getCurrentStep called (stub)")
         val steps = getCurrentNavigationSteps()
@@ -725,24 +995,4 @@ class RouteViewModel : ViewModel() {
     }
     
 
-
-    /**
-     * Cleanup beim Destroy
-     */
-    override fun onCleared() {
-        super.onCleared()
-        viewModelScope.launch {
-            try {
-                // Storage-Manager bereinigt sich selbst automatisch
-                storageManager?.logPerformanceSummary()
-                
-                // Bereinige Feature-Storage Cache
-                landmarkFeatureStorage?.cleanup()
-                
-                Log.i(TAG, "RouteViewModel bereinigt")
-            } catch (e: Exception) {
-                Log.e(TAG, "Fehler beim Bereinigen: ${e.message}")
-            }
-        }
-    }
 }

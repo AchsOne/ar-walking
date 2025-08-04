@@ -4,11 +4,8 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.ui.res.painterResource
+import com.example.arwalking.R
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,6 +32,17 @@ enum class ARScanStatus {
 }
 
 /**
+ * Enum für verschiedene Navigationsaktionen
+ */
+enum class NavigationAction {
+    STRAIGHT,       // Geradeaus gehen
+    TURN_LEFT,      // Links abbiegen
+    TURN_RIGHT,     // Rechts abbiegen
+    THROUGH_DOOR,   // Durch Tür gehen
+    UNKNOWN         // Unbekannte Aktion
+}
+
+/**
  * Helper functions für ARScanStatus enum
  */
 private fun ARScanStatus.shouldPulse(): Boolean = when (this) {
@@ -42,12 +50,12 @@ private fun ARScanStatus.shouldPulse(): Boolean = when (this) {
     else -> false
 }
 
-private fun ARScanStatus.getIcon(): ImageVector = when (this) {
-    ARScanStatus.INITIALIZING -> Icons.Default.CameraAlt
-    ARScanStatus.SCANNING -> Icons.Default.Search
-    ARScanStatus.TRACKING -> Icons.Default.CheckCircle
-    ARScanStatus.LOST -> Icons.Default.Warning
-    ARScanStatus.NAVIGATING -> Icons.Default.CheckCircle
+private fun ARScanStatus.getIconResource(): Int = when (this) {
+    ARScanStatus.INITIALIZING -> R.drawable.location_searching
+    ARScanStatus.SCANNING -> R.drawable.location_searching
+    ARScanStatus.TRACKING -> R.drawable.navigation21
+    ARScanStatus.LOST -> R.drawable.alert_circle
+    ARScanStatus.NAVIGATING -> R.drawable.navigation21
 }
 
 private fun ARScanStatus.getColor(): Color = when (this) {
@@ -72,6 +80,32 @@ private fun ARScanStatus.showProgress(): Boolean = when (this) {
 }
 
 /**
+ * Bestimmt die Navigationsaktion basierend auf der Anweisung
+ */
+private fun getNavigationAction(instruction: String): NavigationAction {
+    val lowerInstruction = instruction.lowercase()
+    return when {
+        lowerInstruction.contains("rechts") || lowerInstruction.contains("right") -> NavigationAction.TURN_RIGHT
+        lowerInstruction.contains("links") || lowerInstruction.contains("left") -> NavigationAction.TURN_LEFT
+        lowerInstruction.contains("tür") || lowerInstruction.contains("door") || 
+        lowerInstruction.contains("eingang") || lowerInstruction.contains("entrance") ||
+        lowerInstruction.contains("durch") || lowerInstruction.contains("through") -> NavigationAction.THROUGH_DOOR
+        else -> NavigationAction.STRAIGHT
+    }
+}
+
+/**
+ * Gibt das passende Icon für die Navigationsaktion zurück
+ */
+private fun NavigationAction.getIconResource(): Int = when (this) {
+    NavigationAction.TURN_RIGHT -> R.drawable.corner_up_right_1
+    NavigationAction.TURN_LEFT -> R.drawable.left
+    NavigationAction.THROUGH_DOOR -> R.drawable.door
+    NavigationAction.STRAIGHT -> R.drawable.arrow_up_1
+    NavigationAction.UNKNOWN -> R.drawable.navigation21
+}
+
+/**
  * AR Info Island - Semitransparente UI-Komponente im Dynamic Island Style
  * Zeigt Scan-Status und subtile Benutzerführung während der AR-Navigation
  */
@@ -79,7 +113,8 @@ private fun ARScanStatus.showProgress(): Boolean = when (this) {
 fun ARInfoIsland(
     scanStatus: ARScanStatus,
     modifier: Modifier = Modifier,
-    isVisible: Boolean = true
+    isVisible: Boolean = true,
+    currentInstruction: String? = null
 ) {
     if (!isVisible) return
     
@@ -123,18 +158,36 @@ fun ARInfoIsland(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Status Icon mit Animation
+                // Status Icon mit Animation - verwende Navigationsicon wenn verfügbar
                 val iconAlpha = if (scanStatus.shouldPulse()) pulseAlpha else 1f
+                val iconResource = if (scanStatus == ARScanStatus.NAVIGATING && currentInstruction != null) {
+                    getNavigationAction(currentInstruction).getIconResource()
+                } else {
+                    scanStatus.getIconResource()
+                }
+                
                 Icon(
-                    imageVector = scanStatus.getIcon(),
+                    painter = painterResource(id = iconResource),
                     contentDescription = null,
                     tint = scanStatus.getColor().copy(alpha = iconAlpha),
                     modifier = Modifier.size(20.dp)
                 )
                 
-                // Status Text
+                // Status Text - zeige Navigationsanweisung ohne Distanz wenn verfügbar
+                val displayText = if (scanStatus == ARScanStatus.NAVIGATING && currentInstruction != null) {
+                    // Entferne Distanzangaben aus der Anweisung
+                    currentInstruction
+                        .replace(Regex("\\d+\\s*m"), "") // Entferne "123m" oder "123 m"
+                        .replace(Regex("\\d+\\s*meter"), "") // Entferne "123 meter"
+                        .replace(Regex("\\d+\\s*Meter"), "") // Entferne "123 Meter"
+                        .replace(Regex("\\s+"), " ") // Mehrfache Leerzeichen durch einfache ersetzen
+                        .trim()
+                } else {
+                    scanStatus.getMessage()
+                }
+                
                 Text(
-                    text = scanStatus.getMessage(),
+                    text = displayText,
                     color = Color.White.copy(alpha = 0.9f),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium,

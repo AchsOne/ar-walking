@@ -33,6 +33,8 @@ import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import com.example.arwalking.BuildConfig
+import kotlinx.coroutines.launch
+
 // OpenCV imports entfernt für Stub-Implementation
 
 class MainActivity : ComponentActivity() {

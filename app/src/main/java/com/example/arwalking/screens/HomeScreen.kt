@@ -96,20 +96,20 @@ fun HomeScreen(
     var showErrorMessage by remember { mutableStateOf(false) }
     var showRouteNotAvailableMessage by remember { mutableStateOf(false) }
     val hapticFeedback = LocalHapticFeedback.current
-    
+
 
 
 
     val routeViewModel: RouteViewModel = viewModel()
     val context = LocalContext.current
-    
 
-    
+
+
     // Funktion zur Prüfung, ob eine Route verfügbar ist
     fun isRouteAvailable(start: String, destination: String): Boolean {
         val cleanStart = start.replace(" (coming soon)", "")
         val cleanDestination = destination.replace(" (coming soon)", "")
-        
+
         // Nur diese Route ist verfügbar (basierend auf der JSON-Datei)
         // Die JSON-Route ist eine Rundroute von Prof. Ludwig's Büro
         return (cleanStart == "Büro Prof. Dr. Ludwig (PT 3.0.84C)" && cleanDestination == "Haupteingang")
@@ -234,7 +234,7 @@ fun HomeScreen(
     ) {
         // Background Image
         Image(
-            painter = painterResource(id = R.drawable.background),
+            painter = painterResource(id = R.drawable.login_image),
             contentDescription = "Background",
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop
@@ -453,7 +453,7 @@ fun HomeScreen(
                 )
             }
         }
-        
+
 
 
         // Location Finding Button (Google Maps style) - positioned in bottom right
@@ -631,9 +631,9 @@ fun HomeScreen(
                             modifier = Modifier.size(32.dp)
                         )
                     }
-                    
+
                     Spacer(modifier = Modifier.height(20.dp))
-                    
+
                     Text(
                         text = "Route nicht verfügbar",
                         color = Color.Black,
@@ -641,9 +641,9 @@ fun HomeScreen(
                         fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center
                     )
-                    
+
                     Spacer(modifier = Modifier.height(12.dp))
-                    
+
                     Text(
                         text = "Diese Route ist noch nicht kartografiert.\n\nWir arbeiten daran, weitere Routen hinzuzufügen.",
                         color = Color.Gray,
@@ -651,9 +651,9 @@ fun HomeScreen(
                         textAlign = TextAlign.Center,
                         lineHeight = 22.sp
                     )
-                    
+
                     Spacer(modifier = Modifier.height(24.dp))
-                    
+
                     // OK Button
                     Card(
                         modifier = Modifier
@@ -682,7 +682,7 @@ fun HomeScreen(
                 }
             }
         }
-        
+
 
     }
 }

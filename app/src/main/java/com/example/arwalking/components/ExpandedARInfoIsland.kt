@@ -18,11 +18,13 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import com.example.arwalking.R
 
 /**
  * Erweiterte AR Info Island mit detaillierten Informationen
@@ -34,7 +36,8 @@ fun ExpandedARInfoIsland(
     landmarkCount: Int = 0,
     confidence: Float = 0f,
     isVisible: Boolean = true,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentInstruction: String? = null
 ) {
     if (!isVisible) return
     
@@ -108,19 +111,43 @@ fun ExpandedARInfoIsland(
                 1f
             }
             
-            Icon(
-                imageVector = getStatusIcon(scanStatus),
-                contentDescription = null,
-                tint = accentColor.copy(alpha = iconAlpha),
-                modifier = Modifier.size(24.dp)
-            )
+            // Verwende Navigationsicon wenn verfügbar, sonst Standard-Icon
+            if (scanStatus == ARScanStatus.NAVIGATING && currentInstruction != null) {
+                val navigationAction = getNavigationAction(currentInstruction)
+                Icon(
+                    painter = painterResource(id = navigationAction.getIconResource()),
+                    contentDescription = null,
+                    tint = accentColor.copy(alpha = iconAlpha),
+                    modifier = Modifier.size(24.dp)
+                )
+            } else {
+                Icon(
+                    imageVector = getStatusIcon(scanStatus),
+                    contentDescription = null,
+                    tint = accentColor.copy(alpha = iconAlpha),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
             
             // Status-Text und Details
             Column(
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
+                // Status Text - zeige Navigationsanweisung ohne Distanz wenn verfügbar
+                val displayText = if (scanStatus == ARScanStatus.NAVIGATING && currentInstruction != null) {
+                    // Entferne Distanzangaben aus der Anweisung
+                    currentInstruction
+                        .replace(Regex("\\d+\\s*m"), "") // Entferne "123m" oder "123 m"
+                        .replace(Regex("\\d+\\s*meter"), "") // Entferne "123 meter"
+                        .replace(Regex("\\d+\\s*Meter"), "") // Entferne "123 Meter"
+                        .replace(Regex("\\s+"), " ") // Mehrfache Leerzeichen durch einfache ersetzen
+                        .trim()
+                } else {
+                    getStatusText(scanStatus)
+                }
+                
                 Text(
-                    text = getStatusText(scanStatus),
+                    text = displayText,
                     color = contentColor,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium
@@ -210,4 +237,30 @@ private fun getConfidenceColor(confidence: Float): Color {
         confidence >= 0.6f -> Color(0xFFFFA500) // Orange
         else -> Color.Red
     }
+}
+
+/**
+ * Bestimmt die Navigationsaktion basierend auf der Anweisung
+ */
+private fun getNavigationAction(instruction: String): NavigationAction {
+    val lowerInstruction = instruction.lowercase()
+    return when {
+        lowerInstruction.contains("rechts") || lowerInstruction.contains("right") -> NavigationAction.TURN_RIGHT
+        lowerInstruction.contains("links") || lowerInstruction.contains("left") -> NavigationAction.TURN_LEFT
+        lowerInstruction.contains("tür") || lowerInstruction.contains("door") || 
+        lowerInstruction.contains("eingang") || lowerInstruction.contains("entrance") ||
+        lowerInstruction.contains("durch") || lowerInstruction.contains("through") -> NavigationAction.THROUGH_DOOR
+        else -> NavigationAction.STRAIGHT
+    }
+}
+
+/**
+ * Gibt das passende Icon für die Navigationsaktion zurück
+ */
+private fun NavigationAction.getIconResource(): Int = when (this) {
+    NavigationAction.TURN_RIGHT -> R.drawable.corner_up_right_1
+    NavigationAction.TURN_LEFT -> R.drawable.left
+    NavigationAction.THROUGH_DOOR -> R.drawable.door
+    NavigationAction.STRAIGHT -> R.drawable.arrow_up_1
+    NavigationAction.UNKNOWN -> R.drawable.navigation21
 }

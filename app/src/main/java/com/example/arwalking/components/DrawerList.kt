@@ -402,6 +402,7 @@ fun StepCard(
                     ),
                     maxLines = if (isCompact) 1 else 2
                 )
+
                 if (step.distance > 0) {
                     Text(
                         text = "${step.distance.toInt()}m",

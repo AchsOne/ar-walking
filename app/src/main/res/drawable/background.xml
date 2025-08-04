@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <gradient
-        android:startColor="#1E3A8A"
-        android:endColor="#3B82F6"
-        android:angle="45" />
-</shape>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="1080dp"
+    android:height="1920dp"
+    android:viewportWidth="1080"
+    android:viewportHeight="1920">
+    <path
+        android:fillColor="#1E3A8A"
+        android:pathData="M0,0L1080,0L1080,1920L0,1920Z" />
+    <path
+        android:fillColor="#3B82F6"
+        android:pathData="M0,0L1080,1920L0,1920Z"
+        android:fillAlpha="0.7" />
+</vector>

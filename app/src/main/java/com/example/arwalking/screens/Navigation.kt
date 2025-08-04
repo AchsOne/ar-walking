@@ -446,6 +446,15 @@ fun ARWalkingUIOverlay(
         val currentStepNumber by routeViewModel.currentNavigationStep.collectAsState()
         val totalStepsCount = navigationSteps.size
         
+        // Hole die aktuelle Navigationsanweisung für den Pfeil
+        val currentRoute by routeViewModel.currentRoute.collectAsState()
+        val currentArrowInstruction = currentRoute?.let { route ->
+            val steps = routeViewModel.getCurrentNavigationSteps()
+            if (currentStepNumber > 0 && currentStepNumber <= steps.size) {
+                steps[currentStepNumber - 1].instruction
+            } else null
+        }
+        
         Animated3DArrowOverlay(
             matches = featureMatches,
             isFeatureMappingEnabled = isFeatureMappingEnabled,
@@ -453,7 +462,8 @@ fun ARWalkingUIOverlay(
             screenHeight = screenHeight,
             currentStep = currentStepNumber,
             totalSteps = totalStepsCount,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            currentInstruction = currentArrowInstruction
         )
 
         // Feature Mapping Overlays
@@ -763,12 +773,23 @@ private fun ARInfoIslandOverlay(
         isTracking = isTracking
     )
     
+    // Hole die aktuelle Navigationsanweisung
+    val currentRoute by routeViewModel.currentRoute.collectAsState()
+    val currentStepNumber by routeViewModel.currentNavigationStep.collectAsState()
+    val currentInstruction = currentRoute?.let { route ->
+        val steps = routeViewModel.getCurrentNavigationSteps()
+        if (currentStepNumber > 0 && currentStepNumber <= steps.size) {
+            steps[currentStepNumber - 1].instruction
+        } else null
+    }
+    
     // Verwende die erweiterte ARInfoIsland mit mehr Informationen
     ExpandedARInfoIsland(
         scanStatus = arStatus,
         landmarkCount = landmarkCount,
         confidence = bestConfidence,
         modifier = modifier,
-        isVisible = isFeatureMappingEnabled
+        isVisible = isFeatureMappingEnabled,
+        currentInstruction = currentInstruction
     )
 }
