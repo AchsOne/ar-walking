@@ -1,11 +1,11 @@
 package com.example.arwalking.components
 
 import android.content.Context
-import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PointF
 import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
@@ -22,6 +22,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.example.arwalking.FeatureMatchResult
+import com.example.arwalking.ARTrackingSystem
+import com.example.arwalking.TrackedLandmark
 import kotlin.math.*
 
 /**
@@ -47,19 +49,27 @@ fun AR3DArrowOverlay(
     if (isFeatureMappingEnabled && bestMatch != null && bestMatch.confidence >= 0.7f) {
         
         // Berechne die Position des Pfeils basierend auf dem Landmark
-        val arrowPosition = calculateArrowPosition(
-            landmark = bestMatch.landmark,
-            screenPosition = bestMatch.screenPosition,
-            screenWidth = screenWidth,
-            screenHeight = screenHeight
-        )
+        val arrowPosition = if (bestMatch.landmark != null) {
+            calculateArrowPosition(
+                landmark = convertToFeatureLandmark(bestMatch.landmark!!),
+                screenPosition = bestMatch.screenPosition,
+                screenWidth = screenWidth,
+                screenHeight = screenHeight
+            )
+        } else {
+            Offset(screenWidth / 2, screenHeight / 2)
+        }
         
         // Berechne die Richtung des Pfeils mit Navigationsdaten
-        val arrowDirection = calculateArrowDirection(
-            landmark = bestMatch.landmark,
-            currentStep = currentStep,
-            totalSteps = totalSteps
-        )
+        val arrowDirection = if (bestMatch.landmark != null) {
+            calculateArrowDirection(
+                landmark = convertToFeatureLandmark(bestMatch.landmark!!),
+                currentStep = currentStep,
+                totalSteps = totalSteps
+            )
+        } else {
+            0f
+        }
         
         Box(modifier = modifier.fillMaxSize()) {
             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -95,8 +105,8 @@ private fun calculateArrowPosition(
     // Dies ist eine vereinfachte Berechnung - in einer echten AR-App würde man
     // die Kamera-Matrix und die 3D-Position des Landmarks verwenden
     
-    val x = landmark.position.x.toFloat()
-    val y = landmark.position.y.toFloat()
+    val x = landmark.position?.x?.toFloat() ?: 0f
+    val y = landmark.position?.y?.toFloat() ?: 0f
     
     // Normalisiere die Position auf Bildschirmkoordinaten
     val normalizedX = (x % 100) / 100f // Vereinfachte Normalisierung
@@ -118,17 +128,28 @@ private fun calculateArrowDirection(
 ): Float {
     // Berechne Richtung basierend auf Landmark-Typ und Position
     val baseAngle = when {
-        // Prof. Ludwig Büro - Ausgang nach links
-        landmark.id == "prof_ludwig_office" -> 270f // Nach links
+        // Prof. Ludwig Büro (PT-1-86) - Ausgang nach links
+        landmark.id == "PT-1-86" -> 270f // Nach links
         
-        // Türen/Eingänge - geradeaus durch
-        landmark.id.contains("entrance") || landmark.id.contains("door") -> 0f // Geradeaus
+        // Türen/Eingänge - geradeaus durch (z.B. PT-1-566, PT-1-697)
+        landmark.id.contains("PT-1-566") || landmark.id.contains("PT-1-697") -> 0f // Geradeaus
+        
+        // Allgemeine Türen basierend auf Typ
+        landmark.name.contains("Tür", ignoreCase = true) || 
+        landmark.name.contains("door", ignoreCase = true) ||
+        landmark.name.contains("Entry", ignoreCase = true) -> 0f // Geradeaus
+        
+        // Büros - nach links
+        landmark.name.contains("Prof.", ignoreCase = true) ||
+        landmark.name.contains("Office", ignoreCase = true) -> 270f // Nach links
         
         // Treppen - nach oben/unten
-        landmark.id.contains("stairs") -> 45f // Diagonal nach oben
+        landmark.name.contains("stairs", ignoreCase = true) ||
+        landmark.name.contains("Treppe", ignoreCase = true) -> 45f // Diagonal nach oben
         
         // Aufzüge - geradeaus
-        landmark.id.contains("elevator") -> 0f // Geradeaus
+        landmark.name.contains("elevator", ignoreCase = true) ||
+        landmark.name.contains("Aufzug", ignoreCase = true) -> 0f // Geradeaus
         
         else -> {
             // Dynamische Berechnung basierend auf Route-Fortschritt
@@ -142,7 +163,7 @@ private fun calculateArrowDirection(
     }
     
     // Füge leichte Variation basierend auf Position hinzu
-    val positionVariation = (landmark.position.x % 10).toFloat() * 2f - 10f
+    val positionVariation = ((landmark.position?.x ?: 0.0) % 10).toFloat() * 2f - 10f
     
     return (baseAngle + positionVariation) % 360f
 }
@@ -227,13 +248,15 @@ private fun DrawScope.draw3DArrowShape(
     }
     
     // Zeichne Schatten
-    canvas.drawPath(shadowPath, shadowPaint)
+    canvas.drawPath(shadowPath as androidx.compose.ui.graphics.Path,
+        shadowPaint as androidx.compose.ui.graphics.Paint
+    )
     
     // Zeichne Hauptpfeil
-    canvas.drawPath(arrowPath, paint)
+    canvas.drawPath(arrowPath as androidx.compose.ui.graphics.Path, paint as androidx.compose.ui.graphics.Paint)
     
     // Zeichne Umriss
-    canvas.drawPath(arrowPath, strokePaint)
+    canvas.drawPath(arrowPath, strokePaint as androidx.compose.ui.graphics.Paint)
     
     // Zeichne Glanz-Effekt für 3D-Look
     val highlightPaint = Paint().apply {
@@ -250,7 +273,9 @@ private fun DrawScope.draw3DArrowShape(
         close()
     }
     
-    canvas.drawPath(highlightPath, highlightPaint)
+    canvas.drawPath(highlightPath as androidx.compose.ui.graphics.Path,
+        highlightPaint as androidx.compose.ui.graphics.Paint
+    )
 }
 
 /**
@@ -292,18 +317,26 @@ fun Animated3DArrowOverlay(
     }
     
     if (isFeatureMappingEnabled && bestMatch != null && bestMatch.confidence >= 0.7f) {
-        val arrowPosition = calculateArrowPosition(
-            landmark = bestMatch.landmark,
-            screenPosition = bestMatch.screenPosition,
-            screenWidth = screenWidth,
-            screenHeight = screenHeight
-        )
+        val arrowPosition = if (bestMatch.landmark != null) {
+            calculateArrowPosition(
+                landmark = convertToFeatureLandmark(bestMatch.landmark!!),
+                screenPosition = bestMatch.screenPosition,
+                screenWidth = screenWidth,
+                screenHeight = screenHeight
+            )
+        } else {
+            Offset(screenWidth / 2, screenHeight / 2)
+        }
         
-        val arrowDirection = calculateArrowDirection(
-            landmark = bestMatch.landmark,
-            currentStep = currentStep,
-            totalSteps = totalSteps
-        )
+        val arrowDirection = if (bestMatch.landmark != null) {
+            calculateArrowDirection(
+                landmark = convertToFeatureLandmark(bestMatch.landmark!!),
+                currentStep = currentStep,
+                totalSteps = totalSteps
+            )
+        } else {
+            0f
+        }
         
         Box(modifier = modifier.fillMaxSize()) {
             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -375,77 +408,7 @@ class GLBArrowModel(private val context: Context) {
     fun getModelData(): ByteArray? = modelData
 }
 
-/**
- * Snapchat-Style AR Arrow mit verbesserter 3D-Positionierung
- */
-@Composable
-fun SnapchatStyleAR3DArrow(
-    matches: List<FeatureMatchResult>,
-    isFeatureMappingEnabled: Boolean,
-    screenWidth: Float,
-    screenHeight: Float,
-    cameraRotation: Float = 0f,
-    deviceOrientation: Float = 0f,
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-    val bestMatch = matches.maxByOrNull { it.confidence }
-    
-    // GLB Model State
-    var glbModel by remember { mutableStateOf<GLBArrowModel?>(null) }
-    var isModelLoaded by remember { mutableStateOf(false) }
-    
-    // Lade GLB-Modell
-    LaunchedEffect(Unit) {
-        val model = GLBArrowModel(context)
-        if (model.loadModel()) {
-            glbModel = model
-            isModelLoaded = true
-        }
-    }
-    
-    if (isFeatureMappingEnabled && bestMatch != null && bestMatch.confidence >= 0.7f) {
-        
-        // Berechne stabilisierte 3D-Position (Snapchat-Style)
-        val stabilizedPosition = calculateStabilized3DPosition(
-            landmark = bestMatch.landmark,
-            screenPosition = bestMatch.screenPosition,
-            screenWidth = screenWidth,
-            screenHeight = screenHeight,
-            cameraRotation = cameraRotation,
-            deviceOrientation = deviceOrientation
-        )
-        
-        // Berechne Pfeil-Orientierung mit Smooth-Tracking
-        val arrowOrientation = calculateSmoothArrowOrientation(
-            landmark = bestMatch.landmark,
-            confidence = bestMatch.confidence,
-            cameraRotation = cameraRotation
-        )
-        
-        Box(modifier = modifier.fillMaxSize()) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                if (isModelLoaded) {
-                    // Verwende GLB-Modell falls verfügbar
-                    drawGLBArrow(
-                        position = stabilizedPosition,
-                        orientation = arrowOrientation,
-                        confidence = bestMatch.confidence,
-                        size = size
-                    )
-                } else {
-                    // Fallback auf verbesserte 2D-Darstellung
-                    drawEnhanced3DArrow(
-                        position = stabilizedPosition,
-                        orientation = arrowOrientation,
-                        confidence = bestMatch.confidence,
-                        size = size
-                    )
-                }
-            }
-        }
-    }
-}
+
 
 /**
  * Berechnet stabilisierte 3D-Position für Snapchat-Style AR
@@ -473,8 +436,8 @@ private fun calculateStabilized3DPosition(
     }
     
     // Fallback: Verwende Landmark-Position mit verbesserter Berechnung
-    val normalizedX = (landmark.position.x.toFloat() % 100) / 100f
-    val normalizedY = (landmark.position.y.toFloat() % 100) / 100f
+    val normalizedX = ((landmark.position?.x?.toFloat() ?: 0f) % 100) / 100f
+    val normalizedY = ((landmark.position?.y?.toFloat() ?: 0f) % 100) / 100f
     
     return Offset(
         x = normalizedX * screenWidth,
@@ -493,10 +456,20 @@ private fun calculateSmoothArrowOrientation(
     
     // Basis-Richtung basierend auf Landmark-Typ
     val baseDirection = when {
-        landmark.id.contains("entrance") -> 0f    // Geradeaus
-        landmark.id.contains("stairs") -> 45f     // Diagonal nach oben
-        landmark.id.contains("elevator") -> 0f    // Geradeaus
-        landmark.id.contains("office") -> 270f    // Nach links
+        // Spezifische Landmark-IDs aus der Route
+        landmark.id == "PT-1-86" -> 270f    // Prof. Ludwig Büro - nach links
+        landmark.id == "PT-1-566" -> 0f     // Tür - geradeaus
+        landmark.id == "PT-1-697" -> 0f     // Entry - geradeaus
+        
+        // Allgemeine Typen basierend auf Namen
+        landmark.name.contains("Entry", ignoreCase = true) ||
+        landmark.name.contains("entrance", ignoreCase = true) -> 0f    // Geradeaus
+        landmark.name.contains("stairs", ignoreCase = true) ||
+        landmark.name.contains("Treppe", ignoreCase = true) -> 45f     // Diagonal nach oben
+        landmark.name.contains("elevator", ignoreCase = true) ||
+        landmark.name.contains("Aufzug", ignoreCase = true) -> 0f    // Geradeaus
+        landmark.name.contains("office", ignoreCase = true) ||
+        landmark.name.contains("Prof.", ignoreCase = true) -> 270f    // Nach links
         else -> 0f
     }
     
@@ -543,7 +516,7 @@ private fun DrawScope.drawEnhanced3DArrow(
         canvas.rotate(orientation)
         
         // Zeichne mehrschichtigen 3D-Effekt
-        drawLayered3DArrow(canvas as Canvas, arrowSize, arrowColor, confidence)
+        drawLayered3DArrow(canvas.nativeCanvas, arrowSize, arrowColor, confidence)
         
         canvas.restore()
     }
@@ -553,7 +526,7 @@ private fun DrawScope.drawEnhanced3DArrow(
  * Zeichnet mehrschichtigen 3D-Pfeil für realistischeren Effekt
  */
 private fun DrawScope.drawLayered3DArrow(
-    canvas: Canvas,
+    canvas: android.graphics.Canvas,
     size: Float,
     color: Color,
     confidence: Float
@@ -578,7 +551,7 @@ private fun DrawScope.drawLayered3DArrow(
  * Zeichnet eine einzelne Pfeil-Schicht
  */
 private fun drawArrowLayer(
-    canvas: Canvas,
+    canvas: android.graphics.Canvas,
     size: Float,
     color: Color,
     offsetX: Float = 0f,
@@ -606,4 +579,17 @@ private fun drawArrowLayer(
     }
     
     canvas.drawPath(arrowPath, paint)
+}
+
+/**
+ * Konvertiert ProcessedLandmark zu FeatureLandmark
+ */
+private fun convertToFeatureLandmark(processedLandmark: com.example.arwalking.ProcessedLandmark): com.example.arwalking.FeatureLandmark {
+    return com.example.arwalking.FeatureLandmark(
+        id = processedLandmark.id,
+        name = processedLandmark.name,
+        description = "Processed landmark",
+        position = com.example.arwalking.Position(0.0, 0.0, 0.0),
+        imageUrl = ""
+    )
 }

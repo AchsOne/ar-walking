@@ -1,38 +1,66 @@
 package com.example.arwalking.data
 
 import android.content.Context
-import com.example.arwalking.RouteData
+import android.util.Log
 import com.google.gson.Gson
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import java.io.IOException
 
+/**
+ * Repository für Route-Daten aus JSON-Assets
+ */
 class RouteRepository(private val context: Context) {
-
+    
+    private val TAG = "RouteRepository"
     private val gson = Gson()
-
-    // Aktuell: JSON aus Assets laden
+    
     suspend fun getRouteFromAssets(filename: String): RouteData? {
-        return withContext(Dispatchers.IO) {
-            try {
-                val jsonString = context.assets.open(filename).bufferedReader().use { it.readText() }
-                gson.fromJson(jsonString, RouteData::class.java)
-            } catch (e: Exception) {
-                null
-            }
+        return try {
+            Log.i(TAG, "Loading route from assets: $filename")
+            
+            val jsonString = context.assets.open(filename).bufferedReader().use { it.readText() }
+            val routeData = gson.fromJson(jsonString, RouteData::class.java)
+            
+            Log.i(TAG, "Route loaded successfully from $filename")
+            routeData
+            
+        } catch (e: IOException) {
+            Log.e(TAG, "Error reading route file $filename: ${e.message}")
+            null
+        } catch (e: Exception) {
+            Log.e(TAG, "Error parsing route data: ${e.message}")
+            null
         }
     }
-
-    // Später: API-Call
-    suspend fun getRouteFromApi(startPoint: String, endPoint: String): RouteData? {
-        return withContext(Dispatchers.IO) {
-            try {
-                // Hier wird später der API-Call implementiert
-                // val response = apiService.getRoute(startPoint, endPoint)
-                // gson.fromJson(response, RouteData::class.java)
-                null
-            } catch (e: Exception) {
-                null
-            }
-        }
+    
+    suspend fun loadRoute(building: String, floor: String, additionalParam: String): RouteData? {
+        Log.d(TAG, "loadRoute called (stub): $building, $floor")
+        return getRouteFromAssets("route.json")
     }
 }
+
+// Datenklassen für Route-JSON
+data class RouteData(
+    val route: Route
+)
+
+data class Route(
+    val path: List<PathItem>
+)
+
+data class PathItem(
+    val xmlName: String,
+    val levelInfo: LevelInfo?,
+    val routeParts: List<RoutePart>
+)
+
+data class LevelInfo(
+    val storey: String?
+)
+
+data class RoutePart(
+    val instruction: String?,
+    val instructionDe: String?,
+    val distance: Double?,
+    val duration: Int?,
+    val landmarks: List<String>?
+)

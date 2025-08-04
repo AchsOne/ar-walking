@@ -21,31 +21,41 @@ Die Bilder sollten nach folgendem Schema benannt werden:
 
 ### Beispiele:
 ```
-prof_ludwig_office.jpg          # Professor Ludwig's Büro
-corridor_main.png               # Hauptkorridor
-stairs_central.jpeg             # Zentrale Treppe
-elevator_bank.webp              # Aufzüge
-entrance_main.jpg               # Haupteingang
-exit_sign.png                   # Notausgangsschild
+PT-1-86.jpg                     # Professor Ludwig's Büro (PT 3.0.84C)
+PT-1-566.png                    # Tür/Doorway
+PT-1-697.jpeg                   # Entry Point
+PT-1-692.webp                   # Branch Point
+PT-1-691.jpg                    # Branch Point
 ```
 
-## 🎯 Empfohlene Landmark-IDs
+## 🎯 Erforderliche Landmark-IDs
 
-Basierend auf der aktuellen Route solltest du Bilder für folgende Landmarks hinzufügen:
+**WICHTIG**: Die Bilder müssen exakt die Landmark-IDs aus der route.json verwenden!
 
-### **Gebäude PT (Physik/Technik)**
-- `pt_entrance_main` - Haupteingang PT-Gebäude
-- `pt_elevator_bank` - Aufzüge im PT-Gebäude
-- `pt_stairs_central` - Zentrale Treppe
-- `pt_corridor_floor3` - Korridor 3. Stock
-- `prof_ludwig_office` - Büro Prof. Ludwig (PT 3.0.84C)
-- `pt_exit_emergency` - Notausgang
+Basierend auf der aktuellen Route benötigst du Bilder für folgende Landmarks:
 
-### **Allgemeine Orientierungspunkte**
-- `campus_map_board` - Campus-Übersichtstafel
-- `parking_area_main` - Hauptparkplatz
-- `bus_stop_campus` - Bushaltestelle Campus
-- `cafeteria_entrance` - Mensa-Eingang
+### **Aus der route.json extrahierte Landmark-IDs:**
+- `PT-1-86` - Prof. Ludwig Büro (PT 3.0.84C) - Office
+- `PT-1-566` - Tür/Doorway 
+- `PT-1-697` - Entry Point
+- `PT-1-764` - Landmark aus Route
+- `PT-1-926` - Landmark aus Route
+- `PT-1-747` - Landmark aus Route
+- `PT-1-686` - Landmark aus Route
+
+**Vollständige Liste der benötigten Bilder:**
+```
+PT-1-86.jpg      # Prof. Ludwig Büro (PT 3.0.84C)
+PT-1-566.jpg     # Tür/Doorway
+PT-1-697.jpg     # Entry Point
+PT-1-764.jpg     # Landmark aus Route
+PT-1-926.jpg     # Landmark aus Route
+PT-1-747.jpg     # Landmark aus Route
+PT-1-686.jpg     # Landmark aus Route
+```
+
+### **Weitere Landmarks aus der Route:**
+Überprüfe deine route.json für weitere Landmark-IDs und erstelle entsprechende Bilder.
 
 ## 📏 Bildanforderungen
 
@@ -125,12 +135,12 @@ Log.d("Cache", "Thumbnail Hit Rate: ${cacheStats.getThumbnailHitRate()}%")
 
 ```
 landmark_images/
-├── prof_ludwig_office.jpg          # 1.2 MB, 1920x1440
-├── pt_entrance_main.png            # 800 KB, 1024x768
-├── pt_corridor_floor3.jpeg         # 650 KB, 1600x1200
-├── pt_stairs_central.jpg           # 900 KB, 1280x960
-├── pt_elevator_bank.webp           # 400 KB, 1024x768
-└── pt_exit_emergency.jpg           # 750 KB, 1200x900
+├── PT-1-86.jpg                     # 1.2 MB, 1920x1440 - Prof. Ludwig Büro
+├── PT-1-566.png                    # 800 KB, 1024x768 - Tür/Doorway
+├── PT-1-697.jpeg                   # 650 KB, 1600x1200 - Entry Point
+├── PT-1-692.jpg                    # 900 KB, 1280x960 - Branch Point
+├── PT-1-691.webp                   # 400 KB, 1024x768 - Branch Point
+└── PT-1-690.jpg                    # 750 KB, 1200x900 - Branch Point
 ```
 
 ## 🔧 Erweiterte Konfiguration

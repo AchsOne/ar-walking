@@ -52,4 +52,12 @@ class ORB private constructor() {
         descriptors.height = keypoints.toArray().size
         descriptors.channels = 1
     }
+    
+    fun setMaxFeatures(maxFeatures: Int) {
+        // Stub implementation - in real OpenCV this would set the max features
+    }
+    
+    fun clear() {
+        // Stub implementation - in real OpenCV this would clear the detector
+    }
 }

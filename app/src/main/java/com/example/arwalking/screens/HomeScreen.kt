@@ -580,7 +580,7 @@ fun HomeScreen(
             }
         }
 
-        // Apple-Style Route Not Available Message
+        // Route Not Available Message
         androidx.compose.animation.AnimatedVisibility(
             visible = showRouteNotAvailableMessage,
             enter = scaleIn(
@@ -614,7 +614,7 @@ fun HomeScreen(
                     modifier = Modifier.padding(32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Info Icon (Apple-Style)
+                    // Info Icon
                     Box(
                         modifier = Modifier
                             .size(64.dp)
@@ -654,7 +654,7 @@ fun HomeScreen(
                     
                     Spacer(modifier = Modifier.height(24.dp))
                     
-                    // OK Button (Apple-Style)
+                    // OK Button
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()

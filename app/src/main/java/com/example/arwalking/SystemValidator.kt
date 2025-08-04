@@ -78,17 +78,12 @@ class SystemValidator(private val context: Context) {
         
         var mappedSteps = 0
         steps.forEach { step ->
-            val hasLandmarks = step.landmarkIds.isNotEmpty()
+            val hasLandmarks = step.landmarks.isNotEmpty()
             if (hasLandmarks) {
                 mappedSteps++
-                Log.i(TAG, "✓ Schritt ${step.stepNumber}: ${step.landmarkIds.size} Landmarks")
-                step.landmarkIds.forEach { landmarkId ->
-                    val landmark = landmarks.find { it.id == landmarkId }
-                    if (landmark != null) {
-                        Log.i(TAG, "    ✓ ${landmarkId} -> ${landmark.name}")
-                    } else {
-                        Log.w(TAG, "    ✗ ${landmarkId} -> Landmark nicht gefunden")
-                    }
+                Log.i(TAG, "✓ Schritt ${step.stepNumber}: ${step.landmarks.size} Landmarks")
+                step.landmarks.forEach { landmarkId ->
+                    Log.i(TAG, "    ✓ ${landmarkId}")
                 }
             } else {
                 Log.w(TAG, "✗ Schritt ${step.stepNumber}: Keine Landmarks zugeordnet")
@@ -109,17 +104,21 @@ class SystemValidator(private val context: Context) {
                 Log.i(TAG, "  Schritt ${index + 1}:")
                 Log.i(TAG, "    Anweisung: ${step.instruction}")
                 Log.i(TAG, "    Gebäude: ${step.building}")
-                Log.i(TAG, "    Landmarks: ${step.landmarkIds.joinToString(", ")}")
+                Log.i(TAG, "    Landmarks: ${step.landmarks.joinToString(", ")}")
             }
             
             // Test der Schritt-Navigation
             Log.i(TAG, "--- Teste Schritt-Navigation ---")
-            routeViewModel.setCurrentNavigationStep(1)
-            val currentStep = routeViewModel.getCurrentStep()
-            if (currentStep != null) {
-                Log.i(TAG, "✓ Aktueller Schritt: ${currentStep.instruction}")
-            } else {
-                Log.e(TAG, "✗ Aktueller Schritt nicht verfügbar")
+            try {
+                routeViewModel.setCurrentNavigationStep(1)
+                val currentStep = routeViewModel.getCurrentStep()
+                if (currentStep != null) {
+                    Log.i(TAG, "✓ Aktueller Schritt: ${currentStep.instruction}")
+                } else {
+                    Log.e(TAG, "✗ Aktueller Schritt nicht verfügbar")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "✗ Fehler beim Testen der Schritt-Navigation: ${e.message}")
             }
             
         } else {
@@ -139,18 +138,13 @@ class SystemValidator(private val context: Context) {
         if (testLandmark != null) {
             // Simuliere ein Match-Ergebnis
             val mockMatch = FeatureMatchResult(
-                landmark = testLandmark,
-                matchCount = 25,
-                confidence = 0.85f,
-                distance = 2.5f,
-                screenPosition = android.graphics.PointF(400f, 300f)
+                landmarkId = testLandmark.id,
+                confidence = 0.85f
             )
             
             Log.i(TAG, "✓ Simuliertes Match erstellt:")
-            Log.i(TAG, "    Landmark: ${mockMatch.landmark.name}")
+            Log.i(TAG, "    Landmark ID: ${mockMatch.landmarkId}")
             Log.i(TAG, "    Confidence: ${mockMatch.confidence}")
-            Log.i(TAG, "    Matches: ${mockMatch.matchCount}")
-            Log.i(TAG, "    Position: (${mockMatch.screenPosition?.x}, ${mockMatch.screenPosition?.y})")
             
         } else {
             Log.e(TAG, "✗ Landmark $landmarkId nicht gefunden")

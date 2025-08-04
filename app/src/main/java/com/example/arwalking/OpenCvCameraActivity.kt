@@ -17,9 +17,20 @@ import org.opencv.android.Utils
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.runtime.*
 import androidx.compose.runtime.collectAsState
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.example.arwalking.FeatureMatchResult
+import com.example.arwalking.RouteViewModel
 import com.example.arwalking.components.ARInfoIsland
 import com.example.arwalking.components.ARScanStatus
 import com.example.arwalking.components.ExpandedARInfoIsland
+import com.example.arwalking.components.SnapchatStyleAR3DArrow
+import com.example.arwalking.components.LandmarkDebugOverlay
+import com.example.arwalking.components.CompactLandmarkDebugInfo
 import com.example.arwalking.components.rememberARScanStatus
 import com.example.arwalking.ui.theme.ARWalkingTheme
 
@@ -39,6 +50,12 @@ class OpenCvCameraActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraV
     // AR Status State
     private var isARInitialized by mutableStateOf(false)
     private var currentMatches by mutableStateOf<List<FeatureMatchResult>>(emptyList())
+    
+    // Kamera-Parameter für AR-Tracking
+    private var screenWidth = 0f
+    private var screenHeight = 0f
+    private var cameraRotation = 0f
+    private var deviceOrientation = 0f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,7 +73,7 @@ class OpenCvCameraActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraV
         arInfoComposeView = ComposeView(this).apply {
             setContent {
                 ARWalkingTheme {
-                    ARInfoIslandOverlay()
+                    AROverlayContent()
                 }
             }
         }
@@ -98,7 +115,11 @@ class OpenCvCameraActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraV
         observeFeatureMatches()
     }
 
-    override fun onCameraViewStarted(width: Int, height: Int) {}
+    override fun onCameraViewStarted(width: Int, height: Int) {
+        screenWidth = width.toFloat()
+        screenHeight = height.toFloat()
+        Log.d("OpenCvCamera", "Kamera gestartet: ${width}x${height}")
+    }
 
     override fun onCameraViewStopped() {}
 
@@ -143,15 +164,28 @@ class OpenCvCameraActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraV
     }
     
     /**
-     * AR Info Island Overlay Composable
+     * Vollständiges AR Overlay mit Info Island, 3D-Pfeil und Debug-Info
      */
     @Composable
-    private fun ARInfoIslandOverlay() {
+    private fun AROverlayContent() {
         val matches by routeViewModel.currentMatches.collectAsState()
+        val isFeatureMappingEnabled by routeViewModel.isFeatureMappingEnabled.collectAsState()
+        val currentStep by routeViewModel.currentNavigationStep.collectAsState()
+        
+        // Debug-Informationen für Landmark-Loading
+        var requiredLandmarkIds by remember { mutableStateOf<List<String>>(emptyList()) }
+        var loadedLandmarkIds by remember { mutableStateOf<List<String>>(emptyList()) }
+        var showDebugOverlay by remember { mutableStateOf(false) }
         
         // Update current matches state
         LaunchedEffect(matches) {
             currentMatches = matches
+        }
+        
+        // Update debug info
+        LaunchedEffect(Unit) {
+            requiredLandmarkIds = routeViewModel.getRequiredLandmarkIds()
+            loadedLandmarkIds = routeViewModel.getCurrentlyLoadedLandmarkIds()
         }
         
         val landmarkCount = matches.size
@@ -166,13 +200,52 @@ class OpenCvCameraActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraV
             isTracking = isTracking
         )
         
-        // Erweiterte Info Island mit mehr Details
-        ExpandedARInfoIsland(
-            scanStatus = arStatus,
-            landmarkCount = landmarkCount,
-            confidence = bestConfidence,
-            isVisible = true
-        )
+        // Vollbild-Container für AR-Overlays
+        Box(modifier = Modifier.fillMaxSize()) {
+            
+            // 3D-Pfeil Overlay (Hintergrund)
+            if (screenWidth > 0 && screenHeight > 0) {
+                SnapchatStyleAR3DArrow(
+                    matches = matches,
+                    isFeatureMappingEnabled = isFeatureMappingEnabled,
+                    screenWidth = screenWidth,
+                    screenHeight = screenHeight,
+                    cameraRotation = cameraRotation,
+                    deviceOrientation = deviceOrientation,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            
+            // Info Island (Vordergrund, oben)
+            ExpandedARInfoIsland(
+                scanStatus = arStatus,
+                landmarkCount = landmarkCount,
+                confidence = bestConfidence,
+                isVisible = true,
+                modifier = Modifier.align(Alignment.TopCenter)
+            )
+            
+            // Kompakte Debug-Info (oben rechts)
+            val matchingCount = requiredLandmarkIds.intersect(loadedLandmarkIds.toSet()).size
+            CompactLandmarkDebugInfo(
+                requiredCount = requiredLandmarkIds.size,
+                loadedCount = loadedLandmarkIds.size,
+                matchingCount = matchingCount,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(16.dp)
+            )
+            
+            // Vollständige Debug-Info (unten, nur bei Bedarf)
+            if (showDebugOverlay) {
+                LandmarkDebugOverlay(
+                    requiredLandmarkIds = requiredLandmarkIds,
+                    loadedLandmarkIds = loadedLandmarkIds,
+                    isVisible = showDebugOverlay,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
+            }
+        }
     }
 
     /**
@@ -186,7 +259,7 @@ class OpenCvCameraActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraV
             Log.d("OpenCvCamera", "Keine Landmarks erkannt")
         } else {
             val bestMatch = matches.first()
-            Log.d("OpenCvCamera", "Erkannt: ${bestMatch.landmark.name} (${(bestMatch.confidence * 100).toInt()}%)")
+            Log.d("OpenCvCamera", "Erkannt: ${bestMatch.landmark?.name ?: "Unknown"} (${(bestMatch.confidence * 100).toInt()}%)")
         }
     }
     
@@ -208,8 +281,7 @@ class OpenCvCameraActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraV
         lifecycleScope.launch {
             routeViewModel.featureNavigationRoute.value?.let { route ->
                 val info = buildString {
-                    append("Navigation Route:\n")
-                    append("Gesamtlänge: ${route.totalLength.toInt()}m\n")
+                    append("Navigation Route: ${route.name}\n")
                     append("Schritte: ${route.steps.size}\n\n")
                     
                     route.steps.take(3).forEach { step ->

@@ -89,8 +89,9 @@ import com.example.arwalking.components.rememberARScanStatus
 
 
 import com.example.arwalking.data.FavoritesRepository
-import components.NavigationDrawer
-import components.NavigationStepData
+import com.example.arwalking.components.NavigationDrawer
+import com.example.arwalking.components.NavigationDrawerList
+import com.example.arwalking.components.NavigationStepData
 import kotlinx.coroutines.delay
 import org.opencv.android.Utils
 import org.opencv.core.Mat
@@ -414,27 +415,22 @@ fun ARWalkingUIOverlay(
         }
 
         // Load navigation steps from JSON route
-        val navigationSteps = if (currentRoute != null) {
-            routeViewModel.getCurrentNavigationSteps().map { step ->
-                val iconRes = when {
-                    step.instruction.contains("Tür", ignoreCase = true) -> R.drawable.navigation21
-                    step.instruction.contains("links", ignoreCase = true) -> R.drawable.left
-                    step.instruction.contains("rechts", ignoreCase = true) -> R.drawable.corner_up_right_1
-                    step.instruction.contains("gerade", ignoreCase = true) -> R.drawable.arrow_up_1
-                    step.instruction.contains("verlassen", ignoreCase = true) -> R.drawable.navigation21
-                    step.instruction.contains("biegen", ignoreCase = true) -> R.drawable.corner_up_right_1
-                    else -> R.drawable.arrow_up_1
-                }
+        val navigationSteps: List<NavigationStepData> = if (currentRoute != null) {
+            routeViewModel.getCurrentNavigationSteps().mapIndexed { index, step ->
                 NavigationStepData(
-                    text = step.instruction.replace("<b>", "").replace("</b>", "").replace("<\\/b>", ""),
-                    icon = iconRes
+                    stepNumber = index + 1,
+                    instruction = step.instruction.replace("<b>", "").replace("</b>", "").replace("<\\/b>", ""),
+                    distance = step.distance,
+                    isCompleted = false
                 )
             }
         } else {
             listOf(
                 NavigationStepData(
-                    text = "Route wird aus JSON geladen...",
-                    icon = R.drawable.arrow_up_1
+                    stepNumber = 1,
+                    instruction = "Route wird aus JSON geladen...",
+                    distance = 0.0,
+                    isCompleted = false
                 )
             )
         }
@@ -493,11 +489,12 @@ fun ARWalkingUIOverlay(
 
 
 
-        // Navigation Drawer
-        NavigationDrawer(
-            navigationSteps = navigationSteps,
+        // Navigation Drawer with enhanced UI
+        NavigationDrawerList(
+            steps = navigationSteps,
+            currentStep = currentStepNumber,
             destinationLabel = actualDestination,
-            onClose = { /* Close functionality moved to back button */ },
+            onClose = { /* Handle close if needed */ },
             availableZoomRatios = availableZoomRatios,
             currentZoomRatio = currentZoomRatio,
             onZoomChange = onZoomChange,
@@ -590,7 +587,6 @@ fun CameraPreviewView(
                             }
 
                             val preview = Preview.Builder()
-                                .setTargetAspectRatio(AspectRatio.RATIO_16_9)
                                 .build()
                                 .also { p ->
                                     p.setSurfaceProvider(surfaceProvider)
@@ -598,7 +594,6 @@ fun CameraPreviewView(
 
                             val imageAnalysis = if (onFrameProcessed != null) {
                                 ImageAnalysis.Builder()
-                                    .setTargetAspectRatio(AspectRatio.RATIO_16_9)
                                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                                     .build()
                                     .also { analysis ->

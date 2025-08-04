@@ -145,20 +145,18 @@ private fun FeatureMatchCard(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    text = match.landmark.name,
+                    text = match.landmark?.name ?: match.landmarkId,
                     color = Color.White,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 
-                if (match.landmark.description.isNotEmpty()) {
-                    Text(
-                        text = match.landmark.description,
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 12.sp,
-                        maxLines = 1
-                    )
-                }
+                Text(
+                    text = "Landmark Match",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 12.sp,
+                    maxLines = 1
+                )
                 
                 // Match Details
                 Row(
@@ -251,7 +249,7 @@ fun FeatureMatchDebugOverlay(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = match.landmark.id,
+                            text = match.landmark?.id ?: match.landmarkId,
                             color = Color.White.copy(alpha = 0.7f),
                             fontSize = 10.sp,
                             modifier = Modifier.weight(1f)

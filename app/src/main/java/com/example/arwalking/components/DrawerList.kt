@@ -1,4 +1,4 @@
-package components
+package com.example.arwalking.components
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -56,12 +56,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.arwalking.R
 
-// Data class for Navigation Steps
-data class NavigationStepData(val text: String, val icon: Int)
+// Import the correct NavigationStepData from NavigationDrawer.kt
+// data class NavigationStepData is already defined in NavigationDrawer.kt
 
 @Composable
-fun NavigationDrawer(
-    navigationSteps: List<NavigationStepData>,
+fun NavigationDrawerList(
+    steps: List<NavigationStepData>,
+    currentStep: Int,
     destinationLabel: String,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -282,20 +283,11 @@ fun NavigationDrawer(
                     .verticalScroll(rememberScrollState())
                     .padding(bottom = 120.dp) // Increased bottom padding for larger drawer
             ) {
-                // Current step (highlighted)
-                if (navigationSteps.isNotEmpty()) {
-                    StepCard(
-                        step = navigationSteps.first(),
-                        isActive = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                // Remaining steps
-                navigationSteps.drop(1).forEach { step ->
+                // All steps with current step highlighted
+                steps.forEachIndexed { index, step ->
                     StepCard(
                         step = step,
-                        isActive = false,
+                        isActive = (index + 1) == currentStep,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -317,9 +309,9 @@ fun NavigationDrawer(
                     .padding(horizontal = 20.dp)
             ) {
                 // Current step (full width)
-                if (navigationSteps.isNotEmpty()) {
+                if (steps.isNotEmpty()) {
                     StepCard(
-                        step = navigationSteps.first(),
+                        step = steps.getOrNull(currentStep - 1) ?: steps.first(),
                         isActive = true,
                         isCompact = true,
                         modifier = Modifier.fillMaxWidth()
@@ -327,7 +319,7 @@ fun NavigationDrawer(
                 }
 
                 // Next steps (narrower width)
-                navigationSteps.drop(1).take(2).forEach { step -> // Show max 2 next steps
+                steps.drop(currentStep).take(2).forEach { step -> // Show max 2 next steps
                     Box(
                         modifier = Modifier.fillMaxWidth(),
                         contentAlignment = Alignment.Center
@@ -387,24 +379,40 @@ fun StepCard(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Image(
-                    painter = painterResource(id = step.icon),
-                    contentDescription = step.text,
-                    modifier = Modifier.size(if (isCompact) 20.dp else 24.dp),
-                    colorFilter = ColorFilter.tint(Color.White)
+                Text(
+                    text = step.stepNumber.toString(),
+                    color = Color.White,
+                    style = TextStyle(
+                        fontSize = if (isCompact) 14.sp else 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 )
             }
 
-            // Step text
-            Text(
-                text = step.text,
-                color = Color.White,
-                style = TextStyle(
-                    fontSize = if (isCompact) 15.sp else 17.sp,
-                    fontWeight = if (isActive) FontWeight.Medium else FontWeight.Normal
-                ),
+            // Step instruction and distance
+            Column(
                 modifier = Modifier.weight(1f)
-            )
+            ) {
+                Text(
+                    text = step.instruction,
+                    color = Color.White,
+                    style = TextStyle(
+                        fontSize = if (isCompact) 15.sp else 17.sp,
+                        fontWeight = if (isActive) FontWeight.Medium else FontWeight.Normal
+                    ),
+                    maxLines = if (isCompact) 1 else 2
+                )
+                if (step.distance > 0) {
+                    Text(
+                        text = "${step.distance.toInt()}m",
+                        color = Color.White.copy(alpha = 0.7f),
+                        style = TextStyle(
+                            fontSize = if (isCompact) 12.sp else 14.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    )
+                }
+            }
         }
     }
 }

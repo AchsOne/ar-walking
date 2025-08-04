@@ -168,7 +168,7 @@ fun LocationDropdown(
 
                 // Hervorgehobener Match
                 withStyle(style = SpanStyle(
-                    color = Color(0xFF007AFF), // Apple Blue
+                    color = Color(0xFF007AFF),
                     fontWeight = FontWeight.SemiBold
                 )) {
                     append(text.substring(index, index + searchQuery.length))
@@ -199,7 +199,7 @@ fun LocationDropdown(
         }
     }
 
-    // Refined animations with Apple-style easing
+    // Refined animations
     val chevronRotation by animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
         animationSpec = spring(
@@ -212,10 +212,9 @@ fun LocationDropdown(
     val dropdownHeight = remember { Animatable(0f) }
     val calculatedHeight = with(density) {
         val contentHeight = if (filteredOptions.isEmpty()) {
-            // Minimale Höhe für "Keine Ergebnisse" Text (Apple-Stil)
             64.dp
         } else {
-            (filteredOptions.size * 44 + 8).dp // Apple-typische Item-Höhe
+            (filteredOptions.size * 44 + 8).dp
         }
         contentHeight.coerceIn(dropdownMinHeight, dropdownMaxHeight).toPx()
     }
@@ -233,7 +232,7 @@ fun LocationDropdown(
         }
     }
 
-    // Apple-style fade and scale
+    // fade and scale
     val dropdownAlpha by animateFloatAsState(
         targetValue = if (isExpanded) 1f else 0f,
         animationSpec = if (isExpanded) tween(350, delayMillis = 50) else tween(200)
@@ -246,7 +245,7 @@ fun LocationDropdown(
         )
     )
 
-    // Button scale animation (Apple-style press effect)
+    // Button scale animation
     val buttonScale by animateFloatAsState(
         targetValue = if (isExpanded) 0.98f else 1f,
         animationSpec = spring(
@@ -290,16 +289,16 @@ fun LocationDropdown(
                     onExpandedChange(true)
                 }
         ) {
-            // Apple-Style Hintergrund
+            //Hintergrund
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .scale(buttonScale)
-                    .clip(RoundedCornerShape(16.dp)) // Apple-typische Rundung
+                    .clip(RoundedCornerShape(16.dp))
                     .background(Color.White)
                     .border(
                         width = 0.5.dp,
-                        color = Color(0xFFD1D1D6), // Apple's separator color
+                        color = Color(0xFFD1D1D6),
                         RoundedCornerShape(16.dp)
                     )
                     .shadow(
@@ -310,26 +309,25 @@ fun LocationDropdown(
                     )
             )
 
-            // Apple-Style Icon
             if (iconResource != null) {
                 Icon(
                     painter = painterResource(iconResource),
                     contentDescription = null,
-                    tint = Color(0xFFE31B0D), // Apple Blue
+                    tint = Color(0xFFE31B0D),
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .offset(x = 16.dp)
                         .requiredSize(20.dp)
                 )
             } else {
-                // Apple-Style Location Indicator
+                // Location Indicator
                 Box(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .offset(x = 18.dp)
                         .requiredSize(12.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFF007AFF)) // Apple Blue
+                        .background(Color(0xFF007AFF))
                 )
             }
 
@@ -408,7 +406,7 @@ fun LocationDropdown(
                 )
             }
 
-            // Apple-Style Chevron with larger clickable area
+            // Chevron with larger clickable area
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
@@ -466,9 +464,9 @@ fun LocationDropdown(
                             .height(
                                 with(density) {
                                     val contentHeight = if (filteredOptions.isEmpty()) {
-                                        64.dp // Apple-Stil
+                                        64.dp
                                     } else {
-                                        (filteredOptions.size * 44 + 8).dp // Apple-typische Item-Höhe
+                                        (filteredOptions.size * 44 + 8).dp
                                     }
                                     contentHeight.coerceIn(dropdownMinHeight, dropdownMaxHeight)
                                 }
@@ -483,15 +481,15 @@ fun LocationDropdown(
                                 // Consume clicks within dropdown - do nothing
                             }
                     ) {
-                        // Apple-Style Dropdown
+                        // Dropdown
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .clip(RoundedCornerShape(16.dp)) // Apple-typische Rundung
+                                .clip(RoundedCornerShape(16.dp))
                                 .background(Color.White)
                                 .border(
                                     width = 0.5.dp,
-                                    color = Color(0xFFD1D1D6), // Apple's separator color
+                                    color = Color(0xFFD1D1D6),
                                     RoundedCornerShape(16.dp)
                                 )
                                 .shadow(
@@ -504,7 +502,7 @@ fun LocationDropdown(
                                 .verticalScroll(scrollStateDropdown)
                         ) {
                             if (filteredOptions.isEmpty()) {
-                                // Apple-Style "Keine Ergebnisse" mit besserem Feedback
+                              // "Keine Ergebnisse" mit besserem Feedback
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -513,7 +511,7 @@ fun LocationDropdown(
                                 ) {
                                     Text(
                                         text = "Keine Ergebnisse",
-                                        color = Color(0xFF8E8E93), // Apple's tertiary label color
+                                        color = Color(0xFF8E8E93),
                                         style = TextStyle(
                                             fontSize = 16.sp,
                                             fontWeight = FontWeight.Medium
@@ -522,7 +520,7 @@ fun LocationDropdown(
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
                                         text = "für \"${searchText.trim()}\"",
-                                        color = Color(0xFFAEAEB2), // Lighter gray
+                                        color = Color(0xFFAEAEB2),
                                         style = TextStyle(
                                             fontSize = 14.sp,
                                             fontWeight = FontWeight.Normal
@@ -538,7 +536,7 @@ fun LocationDropdown(
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(
-                                                if (isPressed) Color(0xFFF2F2F7) // Apple's quaternary system fill
+                                                if (isPressed) Color(0xFFF2F2F7)
                                                 else Color.Transparent
                                             )
                                             .clickable(
@@ -554,7 +552,7 @@ fun LocationDropdown(
                                     ) {
                                         Text(
                                             text = highlightSearchText(option, searchText.trim()),
-                                            color = Color(0xFF000000), // Apple's primary label color
+                                            color = Color(0xFF000000),
                                             style = TextStyle(
                                                 fontSize = 15.sp,
                                                 fontWeight = FontWeight.Normal

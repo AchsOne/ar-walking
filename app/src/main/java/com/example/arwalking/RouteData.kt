@@ -62,14 +62,17 @@ data class RoutePart(
     val iconID: String?,
     val nodes: List<NodeWrapper>?,
     val landmarks: List<RouteLandmarkData> = emptyList(),
-    val instructionDe: String,
+    val instruction: String?,
+    val instructionDe: String?,
     val instructionEn: String?,
+    val landmarkFromInstruction: String? = null,
     val distance: Double? = null,
     val duration: Int? = null
 )
 
 data class NodeWrapper(
-    val node: NodeData
+    val node: NodeData,
+    val edge: EdgeData? = null
 )
 
 data class NodeData(
@@ -80,15 +83,33 @@ data class NodeData(
     val y: String?,
     val type: String?,
     val isdestination: String?,
-    val lsf: String?
+    val lsf: String?,
+    val roomid: String?,
+    val oldroomid: String?
+)
+
+data class EdgeData(
+    val id: String?,
+    val type: String?,
+    val dx: String?,
+    val dy: String?,
+    val ax: String?,
+    val ay: String?,
+    val bx: String?,
+    val by: String?,
+    val cx: String?,
+    val cy: String?,
+    val lengthInMeters: String?
 )
 
 data class RouteLandmarkData(
     val id: String,
-    val name: String,
-    val type: String? = null,
-    val x: Double? = null,
-    val y: Double? = null
+    val nameDe: String?,
+    val nameEn: String?,
+    val type: String?,
+    val x: String?,
+    val y: String?,
+    val lsf: String? = null
 )
 
 data class RouteInfo(

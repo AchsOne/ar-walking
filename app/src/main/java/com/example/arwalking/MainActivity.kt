@@ -12,7 +12,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import com.example.arwalking.screens.CameraNavigation
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -66,58 +68,76 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // OpenCV initialisieren (Stub für lokale Entwicklung)
         try {
-            // Simuliere OpenCV Initialisierung
-            Log.i("MainActivity", "OpenCV Stub loaded successfully")
-        } catch (e: Exception) {
-            Log.e("MainActivity", "OpenCV Stub initialization failed: ${e.message}")
-            Toast.makeText(this, "OpenCV initialization failed!", Toast.LENGTH_LONG).show()
-            return
-        }
+            Log.i("MainActivity", "Starting MainActivity...")
 
-
-
-
-        // ViewModel erstellen
-        routeViewModel = ViewModelProvider(this)[RouteViewModel::class.java]
-
-        // Sofort Feature Mapping initialisieren
-        Log.i("MainActivity", "Initialisiere Feature Mapping beim App-Start...")
-        routeViewModel.initializeStorage(this)
-
-        enableEdgeToEdge()
-        // Entferne checkCameraAndLaunch() - wird über Navigation gehandhabt
-        setContent {
-            ARWalkingTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    ARWalkingApp()
+            enableEdgeToEdge()
+            
+            // UI zuerst setzen - ohne ViewModel Initialisierung
+            setContent {
+                ARWalkingTheme {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        ARWalkingApp()
+                    }
                 }
             }
+
+            // ViewModel und andere Initialisierung später und sicher
+            initializeAppAsync()
+
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Error in onCreate: ${e.message}", e)
+            Toast.makeText(this, "App initialization failed: ${e.message}", Toast.LENGTH_LONG).show()
+            // App trotzdem weiter laufen lassen
         }
-        val navigationRoute = routeViewModel.loadNavigationRoute(this)
-        if (navigationRoute != null) {
-            // Objekt ist bereit für weitere Verwendung
-            routeViewModel.logNavigationRoute(navigationRoute)
-            
-            // Feature Mapping ist bereits initialisiert, aktiviere es sofort
-            routeViewModel.enableStorageSystemImmediately(this)
-            
-            // System-Validierung durchführen (nur im Debug-Modus)
-            if (BuildConfig.DEBUG) {
-                val systemValidator = SystemValidator(this)
-                systemValidator.validateSystem(routeViewModel)
+    }
+
+    private fun initializeAppAsync() {
+        // Führe nur minimale Initialisierung durch, um Crashes zu vermeiden
+        Thread {
+            try {
+                Log.i("MainActivity", "Starting minimal async initialization...")
                 
-                // Simuliere Feature-Matching für Testzwecke
-                systemValidator.simulateFeatureMatching(routeViewModel, "prof_ludwig_office")
+                // ViewModel sicher erstellen
+                runOnUiThread {
+                    try {
+                        routeViewModel = ViewModelProvider(this@MainActivity)[RouteViewModel::class.java]
+                        Log.i("MainActivity", "RouteViewModel created successfully")
+                        
+                        // Initialisierung direkt nach ViewModel-Erstellung
+                        try {
+                            routeViewModel.initializeStorage(this@MainActivity)
+                            Log.i("MainActivity", "Storage initialized")
+                        } catch (e: Exception) {
+                            Log.e("MainActivity", "Storage initialization failed: ${e.message}", e)
+                        }
+                        
+                        try {
+                            val navigationRoute = routeViewModel.loadNavigationRoute(this@MainActivity)
+                            if (navigationRoute != null) {
+                                Log.i("MainActivity", "Navigation route loaded successfully")
+                            } else {
+                                Log.w("MainActivity", "Navigation route could not be loaded")
+                            }
+                        } catch (e: Exception) {
+                            Log.e("MainActivity", "Route loading failed: ${e.message}", e)
+                        }
+                        
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Error creating RouteViewModel: ${e.message}", e)
+                    }
+                }
+                
+                Log.i("MainActivity", "Minimal initialization completed")
+                
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Error in async initialization: ${e.message}", e)
+                // App sollte trotzdem funktionieren, auch wenn Initialisierung fehlschlägt
             }
-            
-        } else {
-            Log.e("MainActivity", "Fehler beim Laden der Route")
-        }
+        }.start()
     }
 }
 
@@ -143,12 +163,6 @@ fun ARWalkingApp() {
                     startLocation = startLocation
                 )
             }
-
-
-
-            // Hier können später weitere Screens hinzugefügt werden:
-            // composable("ar_view") { ARScreen(navController = navController) }
-            // composable("settings") { SettingsScreen(navController = navController) }
         }
     }
 }

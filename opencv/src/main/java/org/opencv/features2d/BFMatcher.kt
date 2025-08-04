@@ -36,4 +36,8 @@ class BFMatcher private constructor(
             match.height = 1
         }
     }
+    
+    fun clear() {
+        // Stub implementation - in real OpenCV this would clear the matcher
+    }
 }

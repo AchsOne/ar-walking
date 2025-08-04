@@ -3,14 +3,23 @@ package org.opencv.core
 /**
  * OpenCV KeyPoint Stub
  */
-data class KeyPoint(
-    val x: Float,
-    val y: Float,
-    val size: Float,
-    val angle: Float = -1f,
-    val response: Float = 0f,
-    val octave: Int = 0,
-    val classId: Int = -1
-) {
-    constructor(x: Float, y: Float, size: Float) : this(x, y, size, -1f, 0f, 0, -1)
+class KeyPoint {
+    val pt: Point = Point()
+    var size: Float = 0f
+    var angle: Float = -1f
+    var response: Float = 0f
+    var octave: Int = 0
+    var class_id: Int = -1
+    
+    constructor()
+    
+    constructor(x: Double, y: Double, size: Float, angle: Float = -1f, response: Float = 0f, octave: Int = 0, classId: Int = -1) {
+        pt.x = x
+        pt.y = y
+        this.size = size
+        this.angle = angle
+        this.response = response
+        this.octave = octave
+        this.class_id = classId
+    }
 }

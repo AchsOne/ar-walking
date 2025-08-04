@@ -191,15 +191,8 @@ object UniversityBuildings {
      * Ordnet ein Landmark basierend auf seiner Position einem Gebäude/Stockwerk zu
      */
     fun assignLandmarkToBuilding(landmark: FeatureLandmark): Pair<String, Int>? {
-        val building = landmark.position.building
-        val floor = landmark.position.floor
-        
-        return if (building != null && floor != null) {
-            Pair(building, floor)
-        } else {
-            // Fallback: Versuche aus dem Namen zu extrahieren
-            extractBuildingFromName(landmark.name)
-        }
+        // Fallback: Versuche aus dem Namen zu extrahieren
+        return extractBuildingFromName(landmark.name)
     }
     
     private fun extractBuildingFromName(name: String): Pair<String, Int>? {

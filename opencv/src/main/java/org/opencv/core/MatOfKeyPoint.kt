@@ -12,19 +12,21 @@ class MatOfKeyPoint {
         // Simuliere KeyPoints
         return Array(10) { i ->
             KeyPoint(
-                x = (Math.random() * width).toFloat(),
-                y = (Math.random() * height).toFloat(),
+                x = Math.random() * width,
+                y = Math.random() * height,
                 size = 10f,
                 angle = (Math.random() * 360).toFloat(),
-                response = (Math.random()).toFloat(),
+                response = Math.random().toFloat(),
                 octave = 0,
                 classId = i
             )
         }
     }
     
-    fun fromArray(keypoints: Array<KeyPoint>) {
+    fun fromArray(vararg keypoints: KeyPoint) {
         // Simuliere Konvertierung von Array zu Mat
+        width = keypoints.size
+        height = 1
     }
     
     fun total(): Long = (width * height).toLong()
