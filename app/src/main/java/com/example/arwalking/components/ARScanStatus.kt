@@ -21,19 +21,8 @@ enum class ARScanState {
 
 @Composable
 fun rememberARScanStatus(): ARScanState {
-    var scanState by remember { mutableStateOf(ARScanState.SCANNING) }
-    
-    // Simulate scanning behavior
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(2000)
-        scanState = ARScanState.FOUND
-        kotlinx.coroutines.delay(3000)
-        scanState = ARScanState.LOST
-        kotlinx.coroutines.delay(1000)
-        scanState = ARScanState.SCANNING
-    }
-    
-    return scanState
+    // Echtes AR-Scan-Verhalten basierend auf Feature-Matching
+    return ARScanState.SCANNING // Default state - wird durch echtes Feature-Matching überschrieben
 }
 
 @Composable

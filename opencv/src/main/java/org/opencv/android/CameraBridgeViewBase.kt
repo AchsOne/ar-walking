@@ -35,30 +35,11 @@ abstract class CameraBridgeViewBase @JvmOverloads constructor(
     fun enableView() {
         isEnabled = true
         listener?.onCameraViewStarted(640, 480)
-        
-        // Simuliere Kamera-Frames
-        simulateCameraFrames()
+        // Echte Kamera-Integration würde hier implementiert werden
     }
     
     fun disableView() {
         isEnabled = false
         listener?.onCameraViewStopped()
-    }
-    
-    private fun simulateCameraFrames() {
-        if (!isEnabled) return
-        
-        // Simuliere kontinuierliche Frames
-        postDelayed({
-            if (isEnabled) {
-                val frame = object : CvCameraViewFrame {
-                    override fun gray(): Mat = Mat(480, 640, 1) // Graustufen
-                    override fun rgba(): Mat = Mat(480, 640, 4) // RGBA
-                }
-                
-                listener?.onCameraFrame(frame)
-                simulateCameraFrames()
-            }
-        }, 33) // ~30 FPS
     }
 }

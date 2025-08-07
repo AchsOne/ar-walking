@@ -77,27 +77,18 @@ import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
 import com.example.arwalking.R
 import com.example.arwalking.RouteViewModel
-import com.example.arwalking.FeatureLandmark
-import com.example.arwalking.components.AR3DArrowOverlay
-import com.example.arwalking.components.ARInfoIsland
-import com.example.arwalking.components.ARScanStatus
 import com.example.arwalking.components.Animated3DArrowOverlay
 import com.example.arwalking.components.ExpandedARInfoIsland
 import com.example.arwalking.components.FeatureMappingStatusIndicator
 import com.example.arwalking.components.FeatureMatchOverlay
 import com.example.arwalking.components.rememberARScanStatus
-
-
 import com.example.arwalking.data.FavoritesRepository
-import com.example.arwalking.components.NavigationDrawer
 import com.example.arwalking.components.NavigationDrawerList
 import com.example.arwalking.components.NavigationStepData
-import kotlinx.coroutines.delay
 import org.opencv.android.Utils
 import org.opencv.core.Mat
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
-import java.util.UUID
 
 
 val LocalNavController = staticCompositionLocalOf<NavController> {
@@ -155,12 +146,10 @@ fun CameraScreen(
     
     // Verwende Route-Informationen aus JSON oder Fallback-Werte
     val currentRoute by routeViewModel.currentRoute.collectAsState()
-    val actualStartLocation = currentRoute?.let { 
-        routeViewModel.getCurrentStartPoint() 
-    } ?: startLocation
-    val actualDestination = currentRoute?.let { 
-        routeViewModel.getCurrentEndPoint() 
-    } ?: destination
+    val routeSummary = routeViewModel.getRouteSummary()
+    
+    val actualStartLocation = routeSummary.startPoint.takeIf { it.isNotBlank() } ?: startLocation
+    val actualDestination = routeSummary.endPoint.takeIf { it.isNotBlank() } ?: destination
 
     var hasPermission by remember {
         mutableStateOf(
@@ -284,15 +273,17 @@ fun ARWalkingUIOverlay(
     // Get current route from ViewModel
     val currentRoute by routeViewModel.currentRoute.collectAsState()
     
-    // Compute actual destination from route or use fallback
-    val actualDestination = currentRoute?.let { 
-        routeViewModel.getCurrentEndPoint() 
-    } ?: destination
+    // Get route summary with all information from JSON
+    val routeSummary = routeViewModel.getRouteSummary()
     
-    // Check if current route is a favorite (reactive)
+    // Use route information from JSON or fallback values
+    val actualDestination = routeSummary.endPoint.takeIf { it.isNotBlank() } ?: destination
+    val actualStartLocation = routeSummary.startPoint.takeIf { it.isNotBlank() } ?: startLocation
+    
+    // Check if current route is a favorite (reactive) - use actual route data
     val favorites by FavoritesRepository.favorites.collectAsState()
     val isFavorite = favorites.any {
-        it.startLocation == startLocation && it.destination == destination
+        it.startLocation == actualStartLocation && it.destination == actualDestination
     }
 
     // Feature Mapping State
@@ -303,14 +294,8 @@ fun ARWalkingUIOverlay(
 
 
 
-    // Sofortige Aktivierung des Feature Mappings beim Laden der UI
-    LaunchedEffect(Unit) {
-        // Stelle sicher, dass Feature Mapping sofort aktiv ist
-        routeViewModel.enableStorageSystemImmediately(context)
-        routeViewModel.startFrameProcessing()
-    }
-
-    // Frame Processing wird jetzt direkt in der CameraPreviewView gehandhabt
+    // Frame Processing wird direkt in der CameraPreviewView gehandhabt
+    // (Doppelte LaunchedEffect entfernt - bereits in CameraScreen initialisiert)
 
     Box(
         modifier = Modifier.fillMaxSize()
@@ -499,11 +484,14 @@ fun ARWalkingUIOverlay(
 
 
 
-        // Navigation Drawer with enhanced UI
+        // Get route summary for enhanced drawer information
+        val routeSummary = routeViewModel.getRouteSummary()
+        
+        // Navigation Drawer with enhanced UI and route information from JSON
         NavigationDrawerList(
             steps = navigationSteps,
             currentStep = currentStepNumber,
-            destinationLabel = actualDestination,
+            destinationLabel = routeSummary.endPoint, // Use endpoint from JSON
             onClose = { /* Handle close if needed */ },
             availableZoomRatios = availableZoomRatios,
             currentZoomRatio = currentZoomRatio,
@@ -584,30 +572,35 @@ fun CameraPreviewView(
         modifier = modifier,
         factory = { ctx ->
             PreviewView(ctx).apply {
-                try {
-                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                    cameraProviderFuture.addListener({
-                        try {
-                            val cameraProvider = cameraProviderFuture.get()
+                Log.d("CameraPreview", "Creating PreviewView")
+            }
+        },
+        update = { previewView ->
+            try {
+                Log.d("CameraPreview", "Updating PreviewView with camera setup")
+                val cameraProviderFuture = ProcessCameraProvider.getInstance(previewView.context)
+                cameraProviderFuture.addListener({
+                    try {
+                        val cameraProvider = cameraProviderFuture.get()
 
-                            if (!cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) {
-                                Log.e("CameraPreview", "Keine Rückkamera verfügbar")
-                                cameraError = "Keine Rückkamera verfügbar"
-                                return@addListener
+                        if (!cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)) {
+                            Log.e("CameraPreview", "Keine Rückkamera verfügbar")
+                            cameraError = "Keine Rückkamera verfügbar"
+                            return@addListener
+                        }
+
+                        val preview = Preview.Builder()
+                            .build()
+                            .also { p ->
+                                p.setSurfaceProvider(previewView.surfaceProvider)
                             }
 
-                            val preview = Preview.Builder()
+                        val imageAnalysis = if (onFrameProcessed != null) {
+                            ImageAnalysis.Builder()
+                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                                 .build()
-                                .also { p ->
-                                    p.setSurfaceProvider(surfaceProvider)
-                                }
-
-                            val imageAnalysis = if (onFrameProcessed != null) {
-                                ImageAnalysis.Builder()
-                                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                    .build()
-                                    .also { analysis ->
-                                        analysis.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
+                                .also { analysis ->
+                                    analysis.setAnalyzer(ContextCompat.getMainExecutor(previewView.context)) { imageProxy ->
                                             try {
                                                 val bitmap = imageProxyToBitmap(imageProxy)
                                                 if (bitmap != null) {
@@ -619,40 +612,39 @@ fun CameraPreviewView(
                                                 imageProxy.close()
                                             }
                                         }
-                                    }
-                            } else null
+                                }
+                        } else null
 
-                            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-                            cameraProvider.unbindAll()
+                        val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                        cameraProvider.unbindAll()
 
-                            val useCases = if (imageAnalysis != null) {
-                                arrayOf(preview, imageAnalysis)
-                            } else {
-                                arrayOf(preview)
-                            }
-
-                            val boundCamera = cameraProvider.bindToLifecycle(
-                                lifecycleOwner,
-                                cameraSelector,
-                                *useCases
-                            )
-
-                            camera = boundCamera
-                            setupZoomCapabilities(boundCamera, onAvailableZoomRatiosChanged)
-                            boundCamera.cameraControl.setZoomRatio(zoomRatio)
-
-                            Log.d("CameraPreview", "Kamera erfolgreich initialisiert")
-
-                        } catch (exc: Exception) {
-                            Log.e("CameraPreview", "Kamera-Bindung fehlgeschlagen", exc)
-                            cameraError = "Kamera konnte nicht gestartet werden"
+                        val useCases = if (imageAnalysis != null) {
+                            arrayOf(preview, imageAnalysis)
+                        } else {
+                            arrayOf(preview)
                         }
-                    }, ContextCompat.getMainExecutor(ctx))
 
-                } catch (exc: Exception) {
-                    Log.e("CameraPreview", "Fehler beim Kamera-Setup", exc)
-                    cameraError = "Kamera-Initialisierung fehlgeschlagen"
-                }
+                        val boundCamera = cameraProvider.bindToLifecycle(
+                            lifecycleOwner,
+                            cameraSelector,
+                            *useCases
+                        )
+
+                        camera = boundCamera
+                        setupZoomCapabilities(boundCamera, onAvailableZoomRatiosChanged)
+                        boundCamera.cameraControl.setZoomRatio(zoomRatio)
+
+                        Log.d("CameraPreview", "Kamera erfolgreich initialisiert")
+
+                    } catch (exc: Exception) {
+                        Log.e("CameraPreview", "Kamera-Bindung fehlgeschlagen", exc)
+                        cameraError = "Kamera konnte nicht gestartet werden"
+                    }
+                }, ContextCompat.getMainExecutor(previewView.context))
+
+            } catch (exc: Exception) {
+                Log.e("CameraPreview", "Fehler beim Kamera-Setup", exc)
+                cameraError = "Kamera-Initialisierung fehlgeschlagen"
             }
         }
     )

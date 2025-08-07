@@ -85,9 +85,7 @@ object FeatureMappingConfig {
         const val ENABLE_DETAILED_MATCHING_LOGS = false // Nur bei Bedarf aktivieren
         const val SAVE_DEBUG_IMAGES = false // Speichert Debug-Bilder lokal
         
-        // Mock-Daten für Entwicklung (lokal)
-        const val MOCK_PROCESSING_DELAY_MS = 500L
-        const val MOCK_SUCCESS_RATE = 0.8f // 80% der Mock-Requests erfolgreich
+
     }
     
     // Experimentelle Features

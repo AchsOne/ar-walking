@@ -63,7 +63,7 @@ class SystemValidator(private val context: Context) {
             Log.i(TAG, "✓ Feature-Mapping initialisiert")
             Log.i(TAG, "  Verfügbare Landmarks: ${landmarks.size}")
             landmarks.forEach { landmark ->
-                Log.i(TAG, "    - ${landmark.name} (${landmark.id})")
+                Log.i(TAG, "    - ${landmark.name} (${landmark.id ?: "unknown"})")
             }
         } else {
             Log.e(TAG, "✗ Feature-Mapping Initialisierung fehlgeschlagen")
@@ -126,28 +126,5 @@ class SystemValidator(private val context: Context) {
         }
     }
     
-    /**
-     * Simuliert Feature-Matching für Testzwecke
-     */
-    fun simulateFeatureMatching(routeViewModel: RouteViewModel, landmarkId: String) {
-        Log.i(TAG, "--- Simuliere Feature-Matching für $landmarkId ---")
-        
-        val landmarks = routeViewModel.getAvailableLandmarks()
-        val testLandmark = landmarks.find { it.id == landmarkId }
-        
-        if (testLandmark != null) {
-            // Simuliere ein Match-Ergebnis
-            val mockMatch = FeatureMatchResult(
-                landmarkId = testLandmark.id,
-                confidence = 0.85f
-            )
-            
-            Log.i(TAG, "✓ Simuliertes Match erstellt:")
-            Log.i(TAG, "    Landmark ID: ${mockMatch.landmarkId}")
-            Log.i(TAG, "    Confidence: ${mockMatch.confidence}")
-            
-        } else {
-            Log.e(TAG, "✗ Landmark $landmarkId nicht gefunden")
-        }
-    }
+
 }

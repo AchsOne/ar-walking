@@ -238,20 +238,32 @@ fun rememberARScanStatus(
     
     // Stabilisiere den Tracking-Status um falsches "Tracking verloren" zu vermeiden
     LaunchedEffect(isTracking) {
+        android.util.Log.d("ARInfoIsland", "=== AR STATUS DEBUG ===")
+        android.util.Log.d("ARInfoIsland", "isTracking changed to: $isTracking")
+        android.util.Log.d("ARInfoIsland", "landmarkCount: $landmarkCount")
+        android.util.Log.d("ARInfoIsland", "bestConfidence: $bestConfidence")
+        android.util.Log.d("ARInfoIsland", "isInitialized: $isInitialized")
+        
         if (isTracking) {
+            android.util.Log.d("ARInfoIsland", "Tracking active - setting stable state to true")
             stableTrackingState = true
             lastTrackingTime = System.currentTimeMillis()
         } else {
+            android.util.Log.w("ARInfoIsland", "Tracking lost - waiting 5 seconds before showing 'Landmark verloren'")
             // Warte 5 Sekunden ohne Tracking bevor "Tracking verloren" angezeigt wird
             delay(5000)
             if (System.currentTimeMillis() - lastTrackingTime >= 5000) {
+                android.util.Log.w("ARInfoIsland", "5 seconds passed without tracking - setting stable state to false")
                 stableTrackingState = false
+            } else {
+                android.util.Log.d("ARInfoIsland", "Tracking recovered within 5 seconds - keeping stable state")
             }
         }
+        android.util.Log.d("ARInfoIsland", "=======================")
     }
     
     LaunchedEffect(isInitialized, landmarkCount, bestConfidence, stableTrackingState) {
-        currentStatus = when {
+        val newStatus = when {
             !isInitialized -> ARScanStatus.INITIALIZING
             !stableTrackingState -> ARScanStatus.LOST
             landmarkCount == 0 -> ARScanStatus.SCANNING
@@ -259,6 +271,21 @@ fun rememberARScanStatus(
             bestConfidence >= 0.5f && isTracking -> ARScanStatus.TRACKING
             else -> ARScanStatus.SCANNING
         }
+        
+        if (newStatus != currentStatus) {
+            android.util.Log.i("ARInfoIsland", "=== STATUS CHANGE ===")
+            android.util.Log.i("ARInfoIsland", "Old status: ${currentStatus.getMessage()}")
+            android.util.Log.i("ARInfoIsland", "New status: ${newStatus.getMessage()}")
+            android.util.Log.i("ARInfoIsland", "Conditions:")
+            android.util.Log.i("ARInfoIsland", "- isInitialized: $isInitialized")
+            android.util.Log.i("ARInfoIsland", "- stableTrackingState: $stableTrackingState")
+            android.util.Log.i("ARInfoIsland", "- landmarkCount: $landmarkCount")
+            android.util.Log.i("ARInfoIsland", "- bestConfidence: $bestConfidence")
+            android.util.Log.i("ARInfoIsland", "- isTracking: $isTracking")
+            android.util.Log.i("ARInfoIsland", "====================")
+        }
+        
+        currentStatus = newStatus
     }
     
     return currentStatus

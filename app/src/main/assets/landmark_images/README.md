@@ -1,35 +1,33 @@
 # Landmark Training Images
 
-Dieses Verzeichnis enthält die Trainingsbilder für das Feature Mapping System.
+Dieses Verzeichnis enthält die Trainingsbilder für das Feature Matching System.
+
+## Landmark-IDs aus final-route.json
+
+Die Route verwendet folgende eindeutige Landmark-IDs:
+
+### Benötigte Landmark-Bilder:
+- `PT-1-566.jpg` - Tür/Durchgang (landmarkFromInstruction)
+- `PT-1-764.jpg` - Tür/Durchgang (landmarkFromInstruction)  
+- `PT-1-926.jpg` - Tür/Durchgang (landmarkFromInstruction)
+- `PT-1-747.jpg` - Tür/Durchgang (landmarkFromInstruction)
+- `PT-1-686.jpg` - Tür/Durchgang (landmarkFromInstruction)
+
+### Alternative Dateinamen (falls Bindestriche Probleme machen):
+- `PT_1_566.jpg`
+- `PT_1_764.jpg`
+- `PT_1_926.jpg`
+- `PT_1_747.jpg`
+- `PT_1_686.jpg`
 
 ## Wie füge ich neue Trainingsbilder hinzu?
 
 ### Methode 1: Direkt in Assets (für Entwicklung)
 
 1. Mache Fotos von den Landmarks mit deinem Handy
-2. Benenne die Bilder nach dem Schema: `{landmark_id}.jpg`
+2. Benenne die Bilder nach dem Schema: `{landmark_id}.jpg` (z.B. `PT-1-566.jpg`)
 3. Kopiere die Bilder in dieses Verzeichnis
-4. Aktualisiere die `feature_map_default.json` falls nötig
-
-### Methode 2: Über die App (zur Laufzeit)
-
-1. Öffne die AR Walking App
-2. Gehe zur Kamera-Navigation
-3. Halte die Kamera auf ein Landmark
-4. Tippe auf den "Training Image" Button (falls implementiert)
-5. Das Bild wird automatisch gespeichert und verarbeitet
-
-## Beispiel-Landmarks für die aktuelle Route
-
-Basierend auf der `route.json` solltest du Fotos von folgenden Stellen machen:
-
-### Prof. Ludwig's Büro Route:
-- `prof_ludwig_office.jpg` - Bürotür von Prof. Ludwig (PT 3.0.84C)
-- `corridor_main.jpg` - Hauptkorridor im 3. Stock
-- `stairs_central.jpg` - Treppe im PT-Gebäude
-- `elevator_bank.jpg` - Aufzüge im PT-Gebäude
-- `entrance_main.jpg` - Haupteingang des PT-Gebäudes
-- `exit_sign.jpg` - Notausgangsschild
+4. Die App lädt automatisch Features aus der `final-route.json`
 
 ## Tipps für gute Trainingsbilder:
 

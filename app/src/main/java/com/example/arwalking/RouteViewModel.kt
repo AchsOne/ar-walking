@@ -17,6 +17,28 @@ import com.example.arwalking.storage.SaveResult
 import com.example.arwalking.storage.CleanupSummary
 import com.example.arwalking.data.RouteRepository
 import com.example.arwalking.data.RouteData
+import com.example.arwalking.data.RoutePart
+
+/**
+ * Extension property to calculate distance from RoutePart nodes
+ */
+private val RoutePart.distance: Double
+    get() = nodes?.sumOf { node ->
+        node.edge?.lengthInMeters?.toDoubleOrNull() ?: 0.0
+    } ?: 0.0
+
+/**
+ * Datenklasse für Routenzusammenfassung
+ */
+data class RouteSummary(
+    val startPoint: String,
+    val endPoint: String,
+    val totalLength: Double, // in Metern
+    val estimatedTime: Int, // in Minuten
+    val buildings: List<String>,
+    val floors: List<String>,
+    val totalSteps: Int
+)
 
 /**
  * ViewModel für Route-Management und Feature-Mapping
@@ -39,6 +61,8 @@ class RouteViewModel : ViewModel() {
     
     // Verarbeitete Landmarks für schnelles Matching
     private var processedLandmarks = mutableListOf<ProcessedLandmark>()
+    
+
     
 
     
@@ -97,7 +121,7 @@ class RouteViewModel : ViewModel() {
             // Lade Route aus JSON-Datei asynchron
             viewModelScope.launch {
                 try {
-                    val routeData = routeRepository?.getRouteFromAssets("route.json")
+                    val routeData = routeRepository?.getRouteFromAssets("models/final-route.json")
                     _currentRoute.value = routeData
                     
                     if (routeData != null) {
@@ -114,6 +138,20 @@ class RouteViewModel : ViewModel() {
                         
                         // Aktiviere Feature-Mapping automatisch wenn Route geladen
                         _isFeatureMappingEnabled.value = true
+                        
+                        // Logge Routeninformationen für Debugging
+                        val summary = getRouteSummary()
+                        Log.i(TAG, "=== ROUTE SUMMARY ===")
+                        Log.i(TAG, "Start: ${summary.startPoint}")
+                        Log.i(TAG, "Ziel: ${summary.endPoint}")
+                        Log.i(TAG, "Länge: ${summary.totalLength}m")
+                        Log.i(TAG, "Zeit: ${summary.estimatedTime} Min.")
+                        Log.i(TAG, "Gebäude: ${summary.buildings}")
+                        Log.i(TAG, "Stockwerke: ${summary.floors}")
+                        Log.i(TAG, "Schritte: ${summary.totalSteps}")
+                        Log.i(TAG, "Info: ${getFormattedRouteInfo()}")
+                        Log.i(TAG, "Beschreibung: ${getRouteDescription()}")
+                        Log.i(TAG, "====================")
                         
                     } else {
                         Log.w(TAG, "Keine Route in JSON-Datei gefunden")
@@ -161,20 +199,45 @@ class RouteViewModel : ViewModel() {
     }
     
     /**
-     * Konvertiert RouteData zu NavigationRoute
+     * Konvertiert RouteData zu NavigationRoute und extrahiert Landmark-IDs
      */
     private fun convertToNavigationRoute(routeData: RouteData): NavigationRoute {
         val steps = mutableListOf<NavigationStep>()
         var stepNumber = 1
         
+        // Sammle alle Landmark-IDs für Feature-Matching
+        val allLandmarkIds = mutableSetOf<String>()
+        
         // Durchlaufe alle PathItems und RouteParts
         routeData.route.path.forEach { pathItem ->
             pathItem.routeParts.forEach { routePart ->
                 // Verwende die deutsche Anweisung als primäre Anweisung
-                val instruction = routePart.instructionDe ?: routePart.instruction ?: "Folgen Sie der Route"
+                val instruction = routePart.instructionDe ?: routePart.instructionEn ?: routePart.instruction ?: "Folgen Sie der Route"
                 
                 // Extrahiere Stockwerk aus levelInfo falls verfügbar
                 val floor = pathItem.levelInfo?.storey?.toIntOrNull() ?: 0
+                
+                // Extrahiere Landmark-IDs aus der neuen Struktur
+                val landmarkIds = mutableListOf<String>()
+                
+                // Hauptlandmark aus landmarkFromInstruction
+                routePart.landmarkFromInstruction?.let { landmarkId ->
+                    landmarkIds.add(landmarkId)
+                    allLandmarkIds.add(landmarkId)
+                }
+                
+                // Zusätzliche Landmarks aus landmarks-Array
+                routePart.landmarks?.forEach { landmark ->
+                    landmark.id?.let { landmarkId ->
+                        landmarkIds.add(landmarkId)
+                        allLandmarkIds.add(landmarkId)
+                    }
+                }
+                
+                // Berechne Distanz aus Nodes falls verfügbar
+                val distance = routePart.nodes?.sumOf { node ->
+                    node.edge?.lengthInMeters?.toDoubleOrNull() ?: 0.0
+                } ?: 0.0
                 
                 steps.add(
                     NavigationStep(
@@ -182,18 +245,26 @@ class RouteViewModel : ViewModel() {
                         instruction = instruction,
                         building = pathItem.xmlName,
                         floor = floor,
-                        landmarks = routePart.landmarks ?: emptyList(),
-                        distance = routePart.distance ?: 0.0,
-                        estimatedTime = routePart.duration ?: 60
+                        landmarks = landmarkIds, // Jetzt echte Landmark-IDs
+                        distance = distance,
+                        estimatedTime = (distance * 1.2).toInt().coerceAtLeast(10) // ~1.2m/s Gehgeschwindigkeit
                     )
                 )
             }
         }
         
+        // Erstelle ProcessedLandmarks für alle gefundenen IDs
+        processedLandmarks.clear()
+        allLandmarkIds.forEach { landmarkId ->
+            processedLandmarks.add(ProcessedLandmark(landmarkId, landmarkId))
+        }
+        
+        Log.i(TAG, "Extrahiert ${allLandmarkIds.size} eindeutige Landmark-IDs: ${allLandmarkIds.take(5)}")
+        
         return NavigationRoute(
             id = "route_${System.currentTimeMillis()}",
             name = "Navigation Route",
-            description = "Generated from route data",
+            description = "Generated from final-route.json",
             totalLength = steps.sumOf { it.distance },
             steps = steps,
             estimatedTime = steps.sumOf { it.estimatedTime }
@@ -214,7 +285,7 @@ class RouteViewModel : ViewModel() {
                 storageManager = ArWalkingStorageManager(context)
                 
                 // Feature-Matching System initialisieren
-                featureMatchingEngine = FeatureMatchingEngine()
+                featureMatchingEngine = FeatureMatchingEngine(context)
                 landmarkFeatureStorage = LandmarkFeatureStorage(context)
                 arTrackingSystem = ARTrackingSystem()
                 
@@ -243,7 +314,13 @@ class RouteViewModel : ViewModel() {
                 Log.i(TAG, "Verfügbare Landmark-Bilder: ${availableLandmarks.size}")
                 
                 availableLandmarks.take(5).forEach { landmark ->
-                    Log.d(TAG, "- ${landmark.id} (${landmark.filename})")
+                    Log.d(TAG, "- ${landmark.id ?: "unknown"} (${landmark.filename})")
+                }
+                
+                // Lade Features für echtes Feature-Matching
+                if (featureMatchingEngine != null && processedLandmarks.isNotEmpty()) {
+                    Log.i(TAG, "Lade Features für echtes Feature-Matching...")
+                    featureMatchingEngine!!.loadLandmarkFeatures(processedLandmarks)
                 }
                 
                 // Feature-Mapping ist verfügbar wenn Landmarks geladen wurden
@@ -282,7 +359,7 @@ class RouteViewModel : ViewModel() {
                 if (landmarks.isNotEmpty()) {
                     Log.i(TAG, "Verfügbare Landmarks: ${landmarks.size}")
                     landmarks.forEach { landmark ->
-                        Log.d(TAG, "- ${landmark.id} (${landmark.filename})")
+                        Log.d(TAG, "- ${landmark.id ?: "unknown"} (${landmark.filename})")
                     }
                 } else {
                     Log.w(TAG, "Keine Landmark-Bilder im Projektverzeichnis gefunden")
@@ -562,8 +639,12 @@ class RouteViewModel : ViewModel() {
         }
     }
     
+    // Frame-Processing-Throttling
+    private var lastFrameProcessTime = 0L
+    private val frameProcessingInterval = 100L // Verarbeite nur alle 100ms (10 FPS)
+    
     /**
-     * Verarbeitet einen Kamera-Frame und simuliert Feature-Matching
+     * Verarbeitet einen Kamera-Frame für echtes Feature-Matching (optimiert)
      */
     fun processFrameForFeatureMatching(frame: org.opencv.core.Mat) {
         // Nur verarbeiten wenn Feature-Mapping aktiviert ist
@@ -571,97 +652,48 @@ class RouteViewModel : ViewModel() {
             return
         }
         
+        // Throttle Frame-Processing für bessere Performance
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastFrameProcessTime < frameProcessingInterval) {
+            return
+        }
+        lastFrameProcessTime = currentTime
+        
         viewModelScope.launch {
             try {
-                Log.d(TAG, "processFrameForFeatureMatching called")
+                Log.v(TAG, "Processing frame for feature matching")
                 
-                // Simuliere Feature-Matching basierend auf aktueller Route und Schritt
-                val currentRoute = _currentRoute.value
-                val currentStep = _currentNavigationStep.value
+                val matches = if (featureMatchingEngine != null) {
+                    // Nur echtes Feature-Matching mit OpenCV
+                    featureMatchingEngine!!.processFrame(frame)
+                } else {
+                    Log.w(TAG, "FeatureMatchingEngine not initialized")
+                    emptyList()
+                }
                 
-                if (currentRoute != null) {
-                    val simulatedMatches = generateSimulatedMatches(currentRoute, currentStep)
-                    _currentMatches.value = simulatedMatches
-                    
-                    if (simulatedMatches.isNotEmpty()) {
-                        Log.d(TAG, "Generated ${simulatedMatches.size} simulated matches for step $currentStep")
-                        simulatedMatches.forEach { match ->
-                            Log.v(TAG, "- ${match.landmarkId}: ${match.confidence}")
-                        }
+                _currentMatches.value = matches
+                
+                if (matches.isNotEmpty()) {
+                    Log.d(TAG, "Found ${matches.size} landmark matches")
+                    matches.take(2).forEach { match ->
+                        Log.v(TAG, "- ${match.landmarkId}: ${(match.confidence * 100).toInt()}%")
                     }
                 } else {
-                    Log.d(TAG, "Keine Route geladen - keine Matches generiert")
-                    _currentMatches.value = emptyList()
+                    Log.w(TAG, "No matches found - this will trigger 'Landmark verloren' after 5 seconds")
                 }
+                Log.d(TAG, "==============================")
+                
             } catch (e: Exception) {
                 Log.e(TAG, "Fehler beim Feature-Matching: ${e.message}")
+                Log.e(TAG, "Exception details: ", e)
                 _currentMatches.value = emptyList()
             }
         }
     }
     
-    /**
-     * Generiert simulierte Feature-Matches basierend auf der aktuellen Route
-     */
-    private fun generateSimulatedMatches(route: RouteData, currentStep: Int): List<FeatureMatchResult> {
-        val matches = mutableListOf<FeatureMatchResult>()
-        
-        try {
-            val steps = getCurrentNavigationSteps()
-            if (currentStep > 0 && currentStep <= steps.size) {
-                val step = steps[currentStep - 1]
-                
-                // Simuliere Matches für Landmarken im aktuellen Schritt
-                step.landmarks.take(3).forEachIndexed { index, landmarkId ->
-                    val confidence = when (index) {
-                        0 -> 0.85f + (Math.random() * 0.1f).toFloat() // Beste Match
-                        1 -> 0.75f + (Math.random() * 0.1f).toFloat() // Gute Match
-                        else -> 0.65f + (Math.random() * 0.1f).toFloat() // Okay Match
-                    }
-                    
-                    val landmark = ProcessedLandmark(
-                        id = landmarkId,
-                        name = getLandmarkDisplayName(landmarkId)
-                    )
-                    
-                    matches.add(
-                        FeatureMatchResult(
-                            landmarkId = landmarkId,
-                            confidence = confidence,
-                            landmark = landmark,
-                            matchCount = (50 + Math.random() * 100).toInt(),
-                            distance = (5f + Math.random() * 20f).toFloat(),
-                            angle = (Math.random() * 360f).toFloat(),
-                            screenPosition = android.graphics.PointF(
-                                (200f + Math.random() * 400f).toFloat(),
-                                (300f + Math.random() * 200f).toFloat()
-                            )
-                        )
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Fehler beim Generieren simulierter Matches: ${e.message}")
-        }
-        
-        return matches
-    }
+
     
-    /**
-     * Gibt einen benutzerfreundlichen Namen für eine Landmark-ID zurück
-     */
-    private fun getLandmarkDisplayName(landmarkId: String): String {
-        return when {
-            landmarkId.contains("PT-1-86") -> "Prof. Ludwig Büro"
-            landmarkId.contains("PT-1-566") -> "Haupteingang PT"
-            landmarkId.contains("PT-1-697") -> "Tür Raum 697"
-            landmarkId.contains("door") -> "Tür"
-            landmarkId.contains("entrance") -> "Eingang"
-            landmarkId.contains("stairs") -> "Treppe"
-            landmarkId.contains("elevator") -> "Aufzug"
-            else -> "Landmark $landmarkId"
-        }
-    }
+
     
     /**
      * Aktiviert/Deaktiviert das Feature-Mapping
@@ -685,13 +717,7 @@ class RouteViewModel : ViewModel() {
         _currentNavigationStep.value = validStep
         Log.d(TAG, "Navigationsschritt aktualisiert: $validStep von $totalSteps")
         
-        // Aktualisiere Matches für den neuen Schritt
-        if (_isFeatureMappingEnabled.value && _currentRoute.value != null) {
-            viewModelScope.launch {
-                val simulatedMatches = generateSimulatedMatches(_currentRoute.value!!, validStep)
-                _currentMatches.value = simulatedMatches
-            }
-        }
+        // Matches werden nur durch echtes Feature-Matching aktualisiert
     }
     
     /**
@@ -781,6 +807,9 @@ class RouteViewModel : ViewModel() {
             arTrackingSystem?.resetTracking()
             processedLandmarks.clear()
             
+            // Bereinige FeatureMatchingEngine
+            featureMatchingEngine?.cleanup()
+            
             // Storage-Manager bereinigt sich selbst automatisch
             viewModelScope.launch {
                 try {
@@ -850,11 +879,11 @@ class RouteViewModel : ViewModel() {
             _currentRoute.value?.route?.path?.forEach { pathItem ->
                 pathItem.routeParts.forEach { routePart ->
                     routePart.landmarks?.forEach { landmark ->
-                        // landmark ist bereits ein String (Landmark-ID)
+                        // landmark ist ein RouteLandmarkData-Objekt, nicht ein String
                         routeLandmarks.add(
                             FeatureLandmark(
-                                id = landmark, // String aus JSON
-                                name = landmark,
+                                id = landmark.id ?: "unknown_landmark", // ID aus RouteLandmarkData
+                                name = landmark.nameDe ?: landmark.nameEn ?: landmark.id ?: "Unknown Landmark",
                                 description = "Landmark",
                                 position = Position(0.0, 0.0, 0.0),
                                 imageUrl = ""
@@ -885,7 +914,7 @@ class RouteViewModel : ViewModel() {
             
             Log.d(TAG, "Verfügbare Landmarks: ${routeLandmarks.size}")
             routeLandmarks.forEach { landmark ->
-                Log.d(TAG, "- ${landmark.id}: ${landmark.name}")
+                Log.d(TAG, "- ${landmark.id ?: "unknown"}: ${landmark.name}")
             }
             
             routeLandmarks
@@ -956,7 +985,7 @@ class RouteViewModel : ViewModel() {
         for (pathItem in currentRoute.route.path) {
             for (routePart in pathItem.routeParts) {
                 routePart.landmarks?.forEach { landmark ->
-                    landmarkIds.add(landmark) // landmarks ist bereits List<String>
+                    landmark.id?.let { landmarkIds.add(it) } // landmarks ist List<RouteLandmarkData>, verwende .id
                 }
             }
         }
@@ -968,31 +997,363 @@ class RouteViewModel : ViewModel() {
      * Fehlende Methoden für Navigation.kt
      */
     fun enableStorageSystemImmediately(context: Context) {
-        Log.d(TAG, "enableStorageSystemImmediately called (stub)")
-        // Stub implementation - verhindert Crashes
+        Log.d(TAG, "enableStorageSystemImmediately called - initialisiere Storage-System")
+        initializeStorage(context)
     }
     
     fun startFrameProcessing() {
-        Log.d(TAG, "startFrameProcessing called (stub)")
-        // Stub implementation - verhindert Crashes
+        Log.d(TAG, "startFrameProcessing called - Feature-Matching bereit")
+        // Feature-Matching ist bereits in initializeStorage() aktiviert
     }
     
+    /**
+     * Gibt den Startpunkt der Route aus der JSON-Datei zurück
+     */
     fun getCurrentStartPoint(): String {
-        Log.d(TAG, "getCurrentStartPoint called (stub)")
-        return "Büro Prof. Dr. Ludwig (PT 3.0.84C)"
+        return try {
+            val route = _currentRoute.value
+            if (route != null && route.route.path.isNotEmpty()) {
+                // Erster Schritt der Route
+                val firstPathItem = route.route.path.first()
+                val firstRoutePart = firstPathItem.routeParts.firstOrNull()
+                
+                // Versuche verschiedene Quellen für den Startpunkt
+                val startPoint = when {
+                    // 1. Aus der ersten Anweisung
+                    !firstRoutePart?.instructionDe.isNullOrBlank() -> {
+                        extractLocationFromInstruction(firstRoutePart!!.instructionDe!!)
+                    }
+                    !firstRoutePart?.instructionEn.isNullOrBlank() -> {
+                        extractLocationFromInstruction(firstRoutePart!!.instructionEn!!)
+                    }
+                    !firstRoutePart?.instruction.isNullOrBlank() -> {
+                        extractLocationFromInstruction(firstRoutePart!!.instruction!!)
+                    }
+                    // 2. Aus dem ersten Node
+                    firstRoutePart?.nodes?.firstOrNull()?.node?.name != null -> {
+                        firstRoutePart.nodes.firstOrNull()?.node?.name ?: "Unbekannter Startpunkt"
+                    }
+                    // 3. Aus dem Gebäudenamen
+                    !firstPathItem.xmlNameDe.isNullOrBlank() -> {
+                        firstPathItem.xmlNameDe!!
+                    }
+                    !firstPathItem.xmlName.isNullOrBlank() -> {
+                        firstPathItem.xmlName
+                    }
+                    else -> "Startpunkt aus Route"
+                }
+                
+                Log.d(TAG, "Startpunkt aus JSON: $startPoint")
+                startPoint
+            } else {
+                Log.w(TAG, "Keine Route geladen - verwende Standard-Startpunkt")
+                "Büro Prof. Dr. Ludwig (PT 3.0.84C)"
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler beim Ermitteln des Startpunkts: ${e.message}")
+            "Büro Prof. Dr. Ludwig (PT 3.0.84C)"
+        }
     }
     
+    /**
+     * Gibt den Endpunkt der Route aus der JSON-Datei zurück
+     */
     fun getCurrentEndPoint(): String {
-        Log.d(TAG, "getCurrentEndPoint called (stub)")
-        return "Haupteingang"
+        return try {
+            val route = _currentRoute.value
+            if (route != null && route.route.path.isNotEmpty()) {
+                // Letzter Schritt der Route
+                val lastPathItem = route.route.path.last()
+                val lastRoutePart = lastPathItem.routeParts.lastOrNull()
+                
+                // Versuche verschiedene Quellen für den Endpunkt
+                val endPoint = when {
+                    // 1. Aus der letzten Anweisung
+                    !lastRoutePart?.instructionDe.isNullOrBlank() -> {
+                        extractLocationFromInstruction(lastRoutePart!!.instructionDe!!)
+                    }
+                    !lastRoutePart?.instructionEn.isNullOrBlank() -> {
+                        extractLocationFromInstruction(lastRoutePart!!.instructionEn!!)
+                    }
+                    !lastRoutePart?.instruction.isNullOrBlank() -> {
+                        extractLocationFromInstruction(lastRoutePart!!.instruction!!)
+                    }
+                    // 2. Aus dem letzten Node mit isdestination="true"
+                    lastRoutePart?.nodes?.any { it.node?.isdestination == "true" } == true -> {
+                        val destinationNode = lastRoutePart.nodes.find { it.node?.isdestination == "true" }
+                        destinationNode?.node?.name ?: "Ziel"
+                    }
+                    // 3. Aus dem letzten Node
+                    lastRoutePart?.nodes?.lastOrNull()?.node?.name != null -> {
+                        lastRoutePart.nodes.last().node?.name!!
+                    }
+                    // 4. Aus dem Gebäudenamen
+                    !lastPathItem.xmlNameDe.isNullOrBlank() -> {
+                        lastPathItem.xmlNameDe!!
+                    }
+                    !lastPathItem.xmlName.isNullOrBlank() -> {
+                        lastPathItem.xmlName
+                    }
+                    else -> "Ziel aus Route"
+                }
+                
+                Log.d(TAG, "Endpunkt aus JSON: $endPoint")
+                endPoint
+            } else {
+                Log.w(TAG, "Keine Route geladen - verwende Standard-Endpunkt")
+                "Haupteingang"
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler beim Ermitteln des Endpunkts: ${e.message}")
+            "Haupteingang"
+        }
+    }
+    
+    /**
+     * Extrahiert Ortsangaben aus Navigationsanweisungen
+     */
+    private fun extractLocationFromInstruction(instruction: String): String {
+        // Entferne HTML-Tags
+        val cleanInstruction = instruction
+            .replace("<b>", "")
+            .replace("</b>", "")
+            .replace("<\\/b>", "")
+            .replace(Regex("<[^>]*>"), "")
+        
+        // Suche nach bekannten Mustern für Ortsangaben
+        val locationPatterns = listOf(
+            Regex("(?:zu|zum|zur|in|im|an|am)\\s+([^.]+?)(?:\\s+(?:gehen|folgen|wenden)|$)", RegexOption.IGNORE_CASE),
+            Regex("(?:Büro|Office|Raum|Room)\\s+([^.]+?)(?:\\s|$)", RegexOption.IGNORE_CASE),
+            Regex("(?:Prof\\.|Professor)\\s+([^.]+?)(?:\\s|$)", RegexOption.IGNORE_CASE),
+            Regex("([A-Z][^.]*(?:eingang|Eingang|entrance|Entrance))", RegexOption.IGNORE_CASE),
+            Regex("([A-Z][^.]*(?:tür|Tür|door|Door))", RegexOption.IGNORE_CASE)
+        )
+        
+        for (pattern in locationPatterns) {
+            val match = pattern.find(cleanInstruction)
+            if (match != null) {
+                val location = match.groupValues[1].trim()
+                if (location.isNotBlank() && location.length > 2) {
+                    return location
+                }
+            }
+        }
+        
+        // Fallback: Verwende die ersten Wörter der Anweisung
+        val words = cleanInstruction.split(" ").take(4)
+        return if (words.isNotEmpty()) {
+            words.joinToString(" ").trim()
+        } else {
+            cleanInstruction.take(50)
+        }
     }
     
     fun getCurrentStep(): NavigationStep? {
-        Log.d(TAG, "getCurrentStep called (stub)")
         val steps = getCurrentNavigationSteps()
         val currentStepNumber = _currentNavigationStep.value
         return steps.find { it.stepNumber == currentStepNumber }
     }
     
+    /**
+     * Gibt die Gesamtlänge der Route zurück
+     */
+    fun getRouteLength(): Double {
+        return try {
+            val route = _currentRoute.value
+            if (route != null) {
+                // Berechne Gesamtlänge aus allen RouteParts
+                var totalLength = 0.0
+                route.route.path.forEach { pathItem ->
+                    pathItem.routeParts.forEach { routePart ->
+                        // Verwende die Extension Property für distance
+                        totalLength += routePart.distance
+                    }
+                }
+                Log.d(TAG, "Gesamtlänge der Route: ${totalLength}m")
+                totalLength
+            } else {
+                0.0
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler beim Berechnen der Routenlänge: ${e.message}")
+            0.0
+        }
+    }
+    
+    /**
+     * Gibt die geschätzte Gehzeit der Route zurück (in Minuten)
+     */
+    fun getEstimatedWalkingTime(): Int {
+        return try {
+            val route = _currentRoute.value
+            if (route != null) {
+                // Verwende routeInfo falls verfügbar
+                route.route.routeInfo?.estimatedTime?.let { return it }
+                
+                // Fallback: Berechne basierend auf Distanz (durchschnittlich 1.2 m/s)
+                val totalLength = getRouteLength()
+                val timeInSeconds = (totalLength / 1.2).toInt()
+                val timeInMinutes = (timeInSeconds / 60).coerceAtLeast(1)
+                
+                Log.d(TAG, "Geschätzte Gehzeit: ${timeInMinutes} Minuten")
+                timeInMinutes
+            } else {
+                0
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler beim Berechnen der Gehzeit: ${e.message}")
+            0
+        }
+    }
+    
+    /**
+     * Gibt die Gebäude zurück, durch die die Route führt
+     */
+    fun getRouteBuildings(): List<String> {
+        return try {
+            val route = _currentRoute.value
+            if (route != null) {
+                val buildings = mutableSetOf<String>()
+                route.route.path.forEach { pathItem ->
+                    // Bevorzuge deutsche Namen
+                    val buildingName = pathItem.xmlNameDe 
+                        ?: pathItem.xmlNameEn 
+                        ?: pathItem.xmlName
+                    
+                    if (!buildingName.isNullOrBlank()) {
+                        buildings.add(buildingName)
+                    }
+                }
+                
+                val buildingList = buildings.toList()
+                Log.d(TAG, "Route führt durch ${buildingList.size} Gebäude: $buildingList")
+                buildingList
+            } else {
+                emptyList()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler beim Ermitteln der Gebäude: ${e.message}")
+            emptyList()
+        }
+    }
+    
+    /**
+     * Gibt die Stockwerke zurück, durch die die Route führt
+     */
+    fun getRouteFloors(): List<String> {
+        return try {
+            val route = _currentRoute.value
+            if (route != null) {
+                val floors = mutableSetOf<String>()
+                route.route.path.forEach { pathItem ->
+                    pathItem.levelInfo?.let { levelInfo ->
+                        val floorName = levelInfo.storeyNameDe 
+                            ?: levelInfo.storeyName 
+                            ?: levelInfo.storeyNameEn
+                            ?: levelInfo.storey
+                        
+                        if (!floorName.isNullOrBlank()) {
+                            floors.add(floorName)
+                        }
+                    }
+                }
+                
+                val floorList = floors.toList()
+                Log.d(TAG, "Route führt durch ${floorList.size} Stockwerke: $floorList")
+                floorList
+            } else {
+                emptyList()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler beim Ermitteln der Stockwerke: ${e.message}")
+            emptyList()
+        }
+    }
+    
+    /**
+     * Gibt eine Zusammenfassung der Route für die Drawer List zurück
+     */
+    fun getRouteSummary(): RouteSummary {
+        return try {
+            RouteSummary(
+                startPoint = getCurrentStartPoint(),
+                endPoint = getCurrentEndPoint(),
+                totalLength = getRouteLength(),
+                estimatedTime = getEstimatedWalkingTime(),
+                buildings = getRouteBuildings(),
+                floors = getRouteFloors(),
+                totalSteps = getCurrentNavigationSteps().size
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler beim Erstellen der Routenzusammenfassung: ${e.message}")
+            RouteSummary(
+                startPoint = "Unbekannter Start",
+                endPoint = "Unbekanntes Ziel",
+                totalLength = 0.0,
+                estimatedTime = 0,
+                buildings = emptyList(),
+                floors = emptyList(),
+                totalSteps = 0
+            )
+        }
+    }
+    
+    /**
+     * Gibt formatierte Routeninformationen für die UI zurück
+     */
+    fun getFormattedRouteInfo(): String {
+        val summary = getRouteSummary()
+        return buildString {
+            if (summary.totalLength > 0) {
+                append("${String.format("%.0f", summary.totalLength)}m")
+            }
+            if (summary.estimatedTime > 0) {
+                if (isNotEmpty()) append(" • ")
+                append("${summary.estimatedTime} Min.")
+            }
+            if (summary.buildings.isNotEmpty()) {
+                if (isNotEmpty()) append(" • ")
+                append("${summary.buildings.size} Gebäude")
+            }
+            if (summary.totalSteps > 0) {
+                if (isNotEmpty()) append(" • ")
+                append("${summary.totalSteps} Schritte")
+            }
+        }.takeIf { it.isNotBlank() } ?: "Route wird geladen..."
+    }
+    
+    /**
+     * Gibt eine kurze Routenbeschreibung zurück
+     */
+    fun getRouteDescription(): String {
+        val summary = getRouteSummary()
+        return when {
+            summary.buildings.size > 1 -> "Route durch ${summary.buildings.joinToString(", ")}"
+            summary.buildings.size == 1 -> "Route in ${summary.buildings.first()}"
+            summary.floors.isNotEmpty() -> "Route über ${summary.floors.size} Stockwerk${if (summary.floors.size > 1) "e" else ""}"
+            else -> "Navigationsroute"
+        }
+    }
+    
+    /**
+     * Gibt den aktuellen Fortschritt der Route zurück (0.0 bis 1.0)
+     */
+    fun getRouteProgress(): Float {
+        val totalSteps = getCurrentNavigationSteps().size
+        val currentStep = _currentNavigationStep.value
+        
+        return if (totalSteps > 0) {
+            (currentStep.toFloat() / totalSteps.toFloat()).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+    }
+    
+    /**
+     * Gibt den Fortschritt als Prozentsatz zurück
+     */
+    fun getRouteProgressPercentage(): Int {
+        return (getRouteProgress() * 100).toInt()
+    }
 
 }
