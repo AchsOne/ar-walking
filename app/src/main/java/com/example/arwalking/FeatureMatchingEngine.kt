@@ -20,7 +20,17 @@ import kotlin.math.sqrt
 class FeatureMatchingEngine(private val context: Context) {
 
     private val TAG = "FeatureMatchingEngine"
-    private val orb = ORB.create(500) // Maximal 500 Features pro Bild
+    private val orb = ORB.create(
+        FeatureMappingConfig.FeatureDetection.ORB_MAX_FEATURES,
+        FeatureMappingConfig.FeatureDetection.ORB_SCALE_FACTOR,
+        FeatureMappingConfig.FeatureDetection.ORB_N_LEVELS,
+        FeatureMappingConfig.FeatureDetection.ORB_EDGE_THRESHOLD,
+        FeatureMappingConfig.FeatureDetection.ORB_FIRST_LEVEL,
+        FeatureMappingConfig.FeatureDetection.ORB_WTA_K,
+        ORB.HARRIS_SCORE,
+        FeatureMappingConfig.FeatureDetection.ORB_PATCH_SIZE,
+        FeatureMappingConfig.FeatureDetection.ORB_FAST_THRESHOLD
+    )
     private val matcher = BFMatcher.create(2, false) // NORM_HAMMING = 2, crossCheck = false
 
     // Cache für Landmark-Features
@@ -84,21 +94,42 @@ class FeatureMatchingEngine(private val context: Context) {
         var mask: Mat? = null
 
         return try {
+            Log.d(TAG, "processFrame called with frame size: ${frame.rows()}x${frame.cols()}")
+            
             if (landmarkFeatures.isEmpty()) {
-                Log.d(TAG, "Keine Landmark-Features geladen")
+                Log.w(TAG, "Keine Landmark-Features geladen (${landmarkFeatures.size} landmarks)")
                 return emptyList()
             }
+
+            Log.d(TAG, "Processing frame against ${landmarkFeatures.size} landmark features")
 
             // Extrahiere Features aus dem aktuellen Frame
             frameKeypoints = MatOfKeyPoint()
             frameDescriptors = Mat()
-            mask = Mat()
+            mask = Mat() // Empty mask = no mask
 
-            orb.detectAndCompute(frame, mask, frameKeypoints, frameDescriptors)
+            // Use separate detect and compute to ensure consistency
+            orb.detect(frame, frameKeypoints)
+            orb.compute(frame, frameKeypoints, frameDescriptors)
 
             if (frameDescriptors.rows() == 0) {
-                Log.d(TAG, "Keine Features im Frame gefunden")
+                Log.w(TAG, "Keine Features im Frame gefunden")
                 return emptyList()
+            }
+
+            Log.d(TAG, "Extracted ${frameDescriptors.rows()} features from frame")
+
+            // Validate consistency between keypoints and descriptors
+            val frameKpts = frameKeypoints.toArray()
+            val numFrameDescriptors = frameDescriptors.rows()
+            
+            if (numFrameDescriptors != frameKpts.size) {
+                Log.e(TAG, "Frame processing error: descriptor/keypoint count mismatch after separate detect/compute: descriptors=$numFrameDescriptors, keypoints=${frameKpts.size}")
+                return emptyList()
+            }
+
+            if (FeatureMappingConfig.Debug.LOG_FEATURE_COUNT) {
+                Log.d(TAG, "Frame processed: ${frameKpts.size} features detected")
             }
 
             val matches = mutableListOf<FeatureMatchResult>()
@@ -107,7 +138,7 @@ class FeatureMatchingEngine(private val context: Context) {
             for ((landmarkId, landmarkFeature) in landmarkFeatures) {
                 val matchResult = matchWithLandmarkImproved(frameKeypoints, frameDescriptors, landmarkFeature, Size(frame.cols().toDouble(), frame.rows().toDouble()))
 
-                if (matchResult != null && matchResult.confidence > 0.2f) { // Reduzierte Mindest-Confidence
+                if (matchResult != null && matchResult.confidence > 0.1f) { // Sehr niedrige Mindest-Confidence für Testing
                     matches.add(matchResult)
                     
                     // Prüfe ob dies eine erfolgreiche Erkennung ist (hohe Confidence)
@@ -181,12 +212,45 @@ class FeatureMatchingEngine(private val context: Context) {
                 return null
             }
 
+            // With separate detect/compute, keypoints and descriptors should match
+            val frameKpts = frameKeypoints.toArray()
+            val landmarkKpts = landmarkFeature.keypoints.toArray()
+            
+            if (frameDescriptors.rows() != frameKpts.size) {
+                Log.w(TAG, "Frame descriptor/keypoint count mismatch: descriptors=${frameDescriptors.rows()}, keypoints=${frameKpts.size}")
+                return null
+            }
+            
+            if (landmarkFeature.descriptors.rows() != landmarkKpts.size) {
+                Log.w(TAG, "Landmark descriptor/keypoint count mismatch: descriptors=${landmarkFeature.descriptors.rows()}, keypoints=${landmarkKpts.size}")
+                return null
+            }
+
             // 1. Brute-Force Matching
             matchesMatOfDMatch = MatOfDMatch()
             matcher.match(frameDescriptors, landmarkFeature.descriptors, matchesMatOfDMatch)
 
-            val allMatches = matchesMatOfDMatch.toArray().toList()
-            if (allMatches.isEmpty()) return null
+            val rawMatches = matchesMatOfDMatch.toArray().toList()
+            if (rawMatches.isEmpty()) return null
+
+            // Pre-filter matches to ensure valid indices (safety measure)
+            // With separate detect/compute, indices should match both keypoints and descriptors
+            val allMatches = rawMatches.filter { match ->
+                match.queryIdx >= 0 && match.queryIdx < frameKpts.size &&
+                match.trainIdx >= 0 && match.trainIdx < landmarkKpts.size
+            }
+
+            if (allMatches.isEmpty()) {
+                Log.w(TAG, "All matches had invalid indices - raw matches: ${rawMatches.size}, valid matches: 0")
+                return null
+            }
+
+            // Debug: Log descriptor and keypoint counts
+            if (FeatureMappingConfig.Debug.LOG_FEATURE_COUNT) {
+                Log.d(TAG, "Matching: Frame descriptors=${frameDescriptors.rows()}, keypoints=${frameKpts.size}, " +
+                          "Landmark descriptors=${landmarkFeature.descriptors.rows()}, keypoints=${landmarkKpts.size}, " +
+                          "Raw matches=${rawMatches.size}, Valid matches=${allMatches.size}")
+            }
 
             // 2. Filtere gute Matches mit adaptivem Threshold
             val sortedMatches = allMatches.sortedBy { it.distance }
@@ -195,9 +259,13 @@ class FeatureMatchingEngine(private val context: Context) {
             } else {
                 100f
             }
-            val threshold = (medianDistance * 0.7f).coerceAtMost(50f) // Adaptiver Threshold
-
+            val threshold = (medianDistance * 1.2f).coerceAtMost(80f) // Lockererer Threshold
+            
             val goodMatches = sortedMatches.filter { it.distance < threshold }
+            
+            if (FeatureMappingConfig.Debug.LOG_MATCH_STATISTICS) {
+                Log.d(TAG, "Landmark ${landmarkFeature.landmark.id}: median=$medianDistance, threshold=$threshold, good=${goodMatches.size}/${allMatches.size}")
+            }
 
             if (goodMatches.size < 4) { // Mindestens 4 Matches für Homographie
                 Log.v(TAG, "Landmark ${landmarkFeature.landmark.id}: Zu wenige gute Matches (${goodMatches.size})")
@@ -208,7 +276,11 @@ class FeatureMatchingEngine(private val context: Context) {
             val matchedKeypoints = extractMatchedKeypoints(frameKeypoints, landmarkFeature.keypoints, goodMatches)
             val (confidence, screenPosition) = validateGeometry(matchedKeypoints, frameSize)
 
-            if (confidence > 0.1f) {
+            if (FeatureMappingConfig.Debug.LOG_MATCH_STATISTICS) {
+                Log.d(TAG, "Landmark ${landmarkFeature.landmark.id}: Geometry validation - confidence=$confidence, threshold=0.05")
+            }
+
+            if (confidence > 0.05f) { // Reduzierter Confidence-Threshold
                 Log.v(TAG, "Landmark ${landmarkFeature.landmark.id}: ${goodMatches.size} gute Matches, Confidence: $confidence")
 
                 FeatureMatchResult(
@@ -219,6 +291,9 @@ class FeatureMatchingEngine(private val context: Context) {
                     screenPosition = screenPosition
                 )
             } else {
+                if (FeatureMappingConfig.Debug.LOG_MATCH_STATISTICS) {
+                    Log.d(TAG, "Landmark ${landmarkFeature.landmark.id}: Confidence too low ($confidence ≤ 0.05)")
+                }
                 null
             }
 
@@ -238,20 +313,31 @@ class FeatureMatchingEngine(private val context: Context) {
         val frameKpts = frameKeypoints.toArray()
         val landmarkKpts = landmarkKeypoints.toArray()
 
+        if (FeatureMappingConfig.Debug.LOG_FEATURE_COUNT) {
+            Log.d(TAG, "Frame keypoints: ${frameKpts.size}, Landmark keypoints: ${landmarkKpts.size}, Matches: ${matches.size}")
+        }
+
         val matchedFrameKpts = mutableListOf<KeyPoint>()
         val matchedLandmarkKpts = mutableListOf<KeyPoint>()
         val validMatches = mutableListOf<DMatch>()
+        var invalidMatchCount = 0
 
         matches.forEach { match ->
-            // Sichere Index-Überprüfung
+            // Sichere Index-Überprüfung (should be redundant now due to pre-filtering)
             if (match.queryIdx >= 0 && match.queryIdx < frameKpts.size &&
                 match.trainIdx >= 0 && match.trainIdx < landmarkKpts.size) {
                 matchedFrameKpts.add(frameKpts[match.queryIdx])
                 matchedLandmarkKpts.add(landmarkKpts[match.trainIdx])
                 validMatches.add(match)
             } else {
-                Log.w(TAG, "Invalid match indices: queryIdx=${match.queryIdx}, trainIdx=${match.trainIdx}, frameSize=${frameKpts.size}, landmarkSize=${landmarkKpts.size}")
+                invalidMatchCount++
+                // This should rarely happen now due to pre-filtering
+                Log.e(TAG, "UNEXPECTED: Invalid match indices after pre-filtering: queryIdx=${match.queryIdx}, trainIdx=${match.trainIdx}, frameSize=${frameKpts.size}, landmarkSize=${landmarkKpts.size}")
             }
+        }
+
+        if (invalidMatchCount > 0) {
+            Log.e(TAG, "UNEXPECTED: Found $invalidMatchCount invalid matches after pre-filtering out of ${matches.size} total matches")
         }
 
         return MatchedKeypoints(matchedFrameKpts, matchedLandmarkKpts, validMatches)
@@ -268,6 +354,9 @@ class FeatureMatchingEngine(private val context: Context) {
 
         return try {
             if (matchedKeypoints.frameKeypoints.size < 4) {
+                if (FeatureMappingConfig.Debug.LOG_MATCH_STATISTICS) {
+                    Log.d(TAG, "Not enough keypoints for homography: ${matchedKeypoints.frameKeypoints.size} < 4")
+                }
                 return Pair(0f, null)
             }
 
@@ -278,25 +367,96 @@ class FeatureMatchingEngine(private val context: Context) {
             val framePointsArray = matchedKeypoints.frameKeypoints.map { Point(it.pt.x, it.pt.y) }.toTypedArray()
             val landmarkPointsArray = matchedKeypoints.landmarkKeypoints.map { Point(it.pt.x, it.pt.y) }.toTypedArray()
 
+            if (FeatureMappingConfig.Debug.LOG_MATCH_STATISTICS) {
+                Log.d(TAG, "Converting ${framePointsArray.size} frame points and ${landmarkPointsArray.size} landmark points")
+            }
+
             // FIXED: Use fromList instead of fromArray
             framePoints.fromList(framePointsArray.toList())
             landmarkPoints.fromList(landmarkPointsArray.toList())
 
             // Berechne Homographie mit RANSAC
             mask = Mat()
-            homography = Calib3d.findHomography(landmarkPoints, framePoints, Calib3d.RANSAC, 3.0, mask)
+            if (FeatureMappingConfig.Debug.LOG_MATCH_STATISTICS) {
+                Log.d(TAG, "Starting homography calculation with RANSAC")
+            }
+            
+            // Versuche verschiedene RANSAC-Parameter
+            homography = Calib3d.findHomography(landmarkPoints, framePoints, Calib3d.RANSAC, 8.0, mask, 2000, 0.99)
+            
+            // Falls das fehlschlägt, versuche weniger strenge Parameter
+            if (mask.total() == 0L) {
+                if (FeatureMappingConfig.Debug.LOG_MATCH_STATISTICS) {
+                    Log.d(TAG, "First RANSAC attempt failed, trying with relaxed parameters")
+                }
+                mask.release()
+                mask = Mat()
+                homography.release()
+                homography = Calib3d.findHomography(landmarkPoints, framePoints, Calib3d.LMEDS, 0.0, mask)
+            }
 
             if (homography.empty()) {
+                if (FeatureMappingConfig.Debug.LOG_MATCH_STATISTICS) {
+                    Log.d(TAG, "Homography calculation failed - empty result")
+                }
                 return Pair(0f, null)
+            }
+
+            if (FeatureMappingConfig.Debug.LOG_MATCH_STATISTICS) {
+                Log.d(TAG, "Homography calculation successful, processing mask")
             }
 
             // FIXED: Correct way to handle mask data
             val maskSize = (mask.total() * mask.channels).toInt()
+            if (FeatureMappingConfig.Debug.LOG_MATCH_STATISTICS) {
+                Log.d(TAG, "Mask processing: total=${mask.total()}, channels=${mask.channels}, size=$maskSize")
+            }
+            
             val maskData = ByteArray(maskSize)
             mask.get(0, 0, maskData)
 
+            if (FeatureMappingConfig.Debug.LOG_MATCH_STATISTICS) {
+                Log.d(TAG, "Mask data extracted: ${maskData.size} bytes, first few values: ${maskData.take(10).joinToString()}")
+            }
+
             if (maskData.isEmpty()) {
-                return Pair(0f, null)
+                if (FeatureMappingConfig.Debug.LOG_MATCH_STATISTICS) {
+                    Log.d(TAG, "Mask data is empty - using fallback confidence calculation")
+                }
+                
+                // Fallback: Verwende nur Match-Qualität ohne RANSAC-Inliers
+                val matchQuality = if (matchedKeypoints.matches.isNotEmpty()) {
+                    val avgDistance = matchedKeypoints.matches.map { it.distance }.average().toFloat()
+                    // Viel strengere Bewertung: Nur sehr gute Matches (< 50) bekommen hohe Scores
+                    if (avgDistance > 60f) 0f else (1f - (avgDistance / 60f)).coerceIn(0f, 1f)
+                } else {
+                    0f
+                }
+                
+                // Sehr strenge Anforderungen für Fallback
+                val matchCountFactor = if (matchedKeypoints.frameKeypoints.size >= 6) {
+                    (matchedKeypoints.frameKeypoints.size.toFloat() / 15f).coerceIn(0f, 1f)
+                } else {
+                    0f // Zu wenige Matches = keine Confidence
+                }
+                
+                // Sehr konservative Fallback-Confidence (maximal 30%)
+                val fallbackConfidence = (matchQuality * matchCountFactor * 0.3f).coerceIn(0f, 0.3f)
+                
+                if (FeatureMappingConfig.Debug.LOG_MATCH_STATISTICS) {
+                    Log.d(TAG, "Fallback confidence: quality=$matchQuality, countFactor=$matchCountFactor, final=$fallbackConfidence")
+                }
+                
+                // Berechne Schwerpunkt aller Matches (ohne RANSAC-Filterung)
+                val screenPosition = if (matchedKeypoints.frameKeypoints.isNotEmpty()) {
+                    val avgX = matchedKeypoints.frameKeypoints.map { it.pt.x }.average().toFloat()
+                    val avgY = matchedKeypoints.frameKeypoints.map { it.pt.y }.average().toFloat()
+                    PointF(avgX, avgY)
+                } else {
+                    null
+                }
+                
+                return Pair(fallbackConfidence, screenPosition)
             }
 
             val inlierCount = maskData.count { it > 0 }
@@ -312,7 +472,18 @@ class FeatureMatchingEngine(private val context: Context) {
             } else {
                 0f
             }
-            val confidence = (inlierRatio * 0.7f + matchQuality * 0.3f).coerceIn(0f, 1f)
+            
+            // Fallback: Wenn keine Inliers gefunden wurden, verwende nur Match-Qualität
+            val confidence = if (inlierCount > 0) {
+                (inlierRatio * 0.7f + matchQuality * 0.3f).coerceIn(0f, 1f)
+            } else {
+                // Fallback für schlechte Homographie: Verwende nur Match-Qualität
+                (matchQuality * 0.5f).coerceIn(0f, 1f)
+            }
+
+            if (FeatureMappingConfig.Debug.LOG_MATCH_STATISTICS) {
+                Log.d(TAG, "Geometry details: inliers=$inlierCount/${matchedKeypoints.frameKeypoints.size}, ratio=$inlierRatio, quality=$matchQuality, confidence=$confidence")
+            }
 
             // Berechne Schwerpunkt der Inlier-Keypoints (sichere Indizierung)
             val inlierFramePoints = matchedKeypoints.frameKeypoints.filterIndexed { index, _ ->
@@ -330,7 +501,10 @@ class FeatureMatchingEngine(private val context: Context) {
             Pair(confidence, screenPosition)
 
         } catch (e: Exception) {
-            Log.e(TAG, "Fehler bei geometrischer Validierung: ${e.message}")
+            Log.e(TAG, "Fehler bei geometrischer Validierung: ${e.message}", e)
+            if (FeatureMappingConfig.Debug.LOG_MATCH_STATISTICS) {
+                Log.e(TAG, "Exception details: ${e.javaClass.simpleName} - ${e.message}")
+            }
             Pair(0f, null)
         } finally {
             // Memory-Cleanup
@@ -349,13 +523,19 @@ class FeatureMatchingEngine(private val context: Context) {
 
         landmarks.forEach { landmark ->
             try {
+                Log.d(TAG, "Versuche Landmark zu laden: ${landmark.id}")
                 val bitmap = loadLandmarkImage(landmark.id)
                 if (bitmap != null) {
+                    Log.d(TAG, "Bitmap erfolgreich geladen für ${landmark.id}, Größe: ${bitmap.width}x${bitmap.height}")
                     val features = extractFeaturesFromBitmap(bitmap, landmark)
                     if (features != null) {
                         landmarkFeatures[landmark.id] = features
                         Log.d(TAG, "Features geladen für Landmark: ${landmark.id}")
+                    } else {
+                        Log.w(TAG, "Feature-Extraktion fehlgeschlagen für Landmark: ${landmark.id}")
                     }
+                } else {
+                    Log.w(TAG, "Bitmap konnte nicht geladen werden für Landmark: ${landmark.id}")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Fehler beim Laden von Landmark ${landmark.id}: ${e.message}")
@@ -418,24 +598,70 @@ class FeatureMatchingEngine(private val context: Context) {
             mat = Mat()
             Utils.bitmapToMat(bitmap, mat)
 
+            // Reduziere Bildgröße für bessere Feature-Extraktion
+            val resizedMat = Mat()
+            val maxDimension = 800.0 // Kleinere maximale Bildgröße für mehr Features
+            val originalCols = mat.cols()
+            val originalRows = mat.rows()
+            val scale = if (originalCols > maxDimension || originalRows > maxDimension) {
+                maxDimension / maxOf(originalCols, originalRows)
+            } else {
+                1.0
+            }
+            
+            Log.d(TAG, "Image resize for ${landmark.id}: original=${originalCols}x${originalRows}, scale=$scale")
+            
+            if (scale < 1.0) {
+                val newSize = Size(originalCols * scale, originalRows * scale)
+                Imgproc.resize(mat, resizedMat, newSize)
+                Log.i(TAG, "Resized image for ${landmark.id}: ${originalCols}x${originalRows} -> ${resizedMat.cols()}x${resizedMat.rows()}")
+            } else {
+                mat.copyTo(resizedMat)
+                Log.d(TAG, "No resize needed for ${landmark.id}")
+            }
+
             // Konvertiere zu Graustufen falls nötig
-            grayMat = if (mat.channels > 1) {
+            grayMat = if (resizedMat.channels() > 1) {
                 val gray = Mat()
-                Imgproc.cvtColor(mat, gray, Imgproc.COLOR_BGR2GRAY)
+                Imgproc.cvtColor(resizedMat, gray, Imgproc.COLOR_BGR2GRAY)
                 gray
             } else {
-                mat.clone()
+                resizedMat.clone()
             }
 
             // Extrahiere ORB Features
             val keypoints = MatOfKeyPoint()
             val descriptors = Mat()
-            mask = Mat()
+            mask = Mat() // Empty mask = no mask
 
-            orb.detectAndCompute(grayMat, mask, keypoints, descriptors)
+            Log.d(TAG, "Starting ORB feature detection for ${landmark.id}, image size: ${grayMat.cols()}x${grayMat.rows()}")
+            
+            // Use separate detect and compute to ensure consistency
+            orb.detect(grayMat, keypoints)
+            val initialKeypoints = keypoints.toArray().size
+            
+            orb.compute(grayMat, keypoints, descriptors)
+            
+            // Cleanup resized mat
+            resizedMat.release()
+            val finalKeypoints = keypoints.toArray().size
+            val numDescriptors = descriptors.rows()
+            
+            Log.d(TAG, "ORB detection for ${landmark.id}: initial=$initialKeypoints, final=$finalKeypoints keypoints, $numDescriptors descriptors")
 
             if (descriptors.rows() > 0) {
-                Log.d(TAG, "Extrahiert ${keypoints.toArray().size} Features für ${landmark.id}")
+                // With separate detect/compute, keypoints and descriptors should now match
+                val kpts = keypoints.toArray()
+                val numDescriptors = descriptors.rows()
+                
+                if (numDescriptors != kpts.size) {
+                    Log.e(TAG, "Landmark ${landmark.id} processing error: descriptor/keypoint count mismatch after separate detect/compute: descriptors=$numDescriptors, keypoints=${kpts.size}")
+                    keypoints.release()
+                    descriptors.release()
+                    return null
+                }
+                
+                Log.d(TAG, "Extrahiert $numDescriptors gültige Features für ${landmark.id}")
                 LandmarkFeatures(keypoints, descriptors, landmark)
             } else {
                 Log.w(TAG, "Keine Features extrahiert für ${landmark.id}")
@@ -501,16 +727,10 @@ class FeatureMatchingEngine(private val context: Context) {
      * Gibt die Anzahl der geladenen Landmarks zurück
      */
     fun getLoadedLandmarkCount(): Int = landmarkFeatures.size
-}
-
-class LandmarkFeatureStorage(private val context: android.content.Context) {
-
-    private val TAG = "LandmarkFeatureStorage"
-
-    init {
-        Log.i(TAG, "LandmarkFeatureStorage initialized")
-    }
-
+    
+    /**
+     * Importiert Landmarks aus Assets (Stub-Implementierung)
+     */
     fun importLandmarksFromAssets(): Int {
         Log.d(TAG, "importLandmarksFromAssets called")
         // Hier könnten wir Assets scannen, aber das macht die FeatureMatchingEngine bereits
@@ -542,22 +762,22 @@ class LandmarkFeatureStorage(private val context: android.content.Context) {
         return landmarkIds.map { ProcessedLandmark(it, it) }
     }
 
+    /**
+     * Lädt alle verfügbaren Landmarks (Fallback)
+     */
     fun loadAllLandmarks(): List<ProcessedLandmark> {
         Log.d(TAG, "loadAllLandmarks called - returning empty list (use route-specific loading)")
         return emptyList()
     }
 
+    /**
+     * Gibt Storage-Statistiken zurück
+     */
     fun getStorageStats(): StorageStats {
-        return StorageStats()
-    }
-
-    fun cleanup() {
-        Log.d(TAG, "cleanup called")
-    }
-
-    fun saveLandmarkFeatures(landmarkId: String, landmark: Any, features: Any, bitmap: android.graphics.Bitmap): Boolean {
-        Log.d(TAG, "saveLandmarkFeatures called: $landmarkId")
-        return true
+        return StorageStats(
+            landmarkCount = landmarkFeatures.size,
+            totalSizeBytes = 0L // Stub
+        )
     }
 }
 
@@ -594,8 +814,9 @@ data class FeatureMatchResult(
     val screenPosition: android.graphics.PointF? = null
 )
 
-class StorageStats {
-    val landmarkCount: Int = 0
-
-    fun getTotalSizeMB(): Double = 0.0
+data class StorageStats(
+    val landmarkCount: Int = 0,
+    val totalSizeBytes: Long = 0L
+) {
+    fun getTotalSizeMB(): Double = totalSizeBytes / (1024.0 * 1024.0)
 }

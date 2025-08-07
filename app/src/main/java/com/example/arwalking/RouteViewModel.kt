@@ -56,7 +56,6 @@ class RouteViewModel : ViewModel() {
     
     // Feature Matching System
     private var featureMatchingEngine: FeatureMatchingEngine? = null
-    private var landmarkFeatureStorage: LandmarkFeatureStorage? = null
     private var arTrackingSystem: ARTrackingSystem? = null
     
     // Verarbeitete Landmarks für schnelles Matching
@@ -136,8 +135,8 @@ class RouteViewModel : ViewModel() {
                         // Setze ersten Schritt als aktiv
                         _currentNavigationStep.value = 1
                         
-                        // Aktiviere Feature-Mapping automatisch wenn Route geladen
-                        _isFeatureMappingEnabled.value = true
+                        // Lade Landmarks für die neue Route
+                        loadLandmarksForCurrentRoute()
                         
                         // Logge Routeninformationen für Debugging
                         val summary = getRouteSummary()
@@ -286,45 +285,16 @@ class RouteViewModel : ViewModel() {
                 
                 // Feature-Matching System initialisieren
                 featureMatchingEngine = FeatureMatchingEngine(context)
-                landmarkFeatureStorage = LandmarkFeatureStorage(context)
                 arTrackingSystem = ARTrackingSystem()
                 
                 // Importiere Landmarks aus Assets falls noch nicht vorhanden
-                val importedCount = landmarkFeatureStorage!!.importLandmarksFromAssets()
+                val importedCount = featureMatchingEngine!!.importLandmarksFromAssets()
                 if (importedCount > 0) {
                     Log.i(TAG, "$importedCount Landmarks aus Assets importiert")
                 }
                 
-                // Lade route-spezifische Landmarks falls Route verfügbar ist
-                processedLandmarks.clear()
-                
-                val currentRoute = _currentRoute.value
-                if (currentRoute != null) {
-                    // Lade nur die Landmarks, die in der aktuellen Route verwendet werden
-                    processedLandmarks.addAll(landmarkFeatureStorage!!.loadRouteSpecificLandmarks(currentRoute.route))
-                    Log.i(TAG, "${processedLandmarks.size} route-spezifische Landmarks für Feature-Matching geladen")
-                } else {
-                    // Fallback: Lade alle verfügbaren Landmarks
-                    processedLandmarks.addAll(landmarkFeatureStorage!!.loadAllLandmarks())
-                    Log.i(TAG, "${processedLandmarks.size} Landmarks für Feature-Matching geladen (alle verfügbaren)")
-                }
-                
-                // Prüfe verfügbare Bilder im Projektverzeichnis
-                val availableLandmarks = storageManager!!.getAvailableProjectLandmarks()
-                Log.i(TAG, "Verfügbare Landmark-Bilder: ${availableLandmarks.size}")
-                
-                availableLandmarks.take(5).forEach { landmark ->
-                    Log.d(TAG, "- ${landmark.id ?: "unknown"} (${landmark.filename})")
-                }
-                
-                // Lade Features für echtes Feature-Matching
-                if (featureMatchingEngine != null && processedLandmarks.isNotEmpty()) {
-                    Log.i(TAG, "Lade Features für echtes Feature-Matching...")
-                    featureMatchingEngine!!.loadLandmarkFeatures(processedLandmarks)
-                }
-                
-                // Feature-Mapping ist verfügbar wenn Landmarks geladen wurden
-                _isFeatureMappingEnabled.value = processedLandmarks.isNotEmpty()
+                // Landmarks werden später geladen, wenn eine Route verfügbar ist
+                Log.i(TAG, "Storage-System initialisiert. Landmarks werden geladen, sobald eine Route verfügbar ist.")
                 
                 Log.i(TAG, "Feature-Matching System erfolgreich initialisiert")
                 
@@ -332,11 +302,55 @@ class RouteViewModel : ViewModel() {
                 val status = storageManager!!.getStorageStatus()
                 Log.i(TAG, "Storage-Status: ${status.getHealthStatus()}")
                 
-                val storageStats = landmarkFeatureStorage!!.getStorageStats()
+                val storageStats = featureMatchingEngine!!.getStorageStats()
                 Log.i(TAG, "Feature-Storage: ${storageStats.landmarkCount} Landmarks, ${"%.1f".format(storageStats.getTotalSizeMB())} MB")
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Fehler bei Storage-Initialisierung: ${e.message}")
+                _isFeatureMappingEnabled.value = false
+            }
+        }
+    }
+    
+    /**
+     * Lädt Landmarks für die aktuelle Route
+     */
+    private fun loadLandmarksForCurrentRoute() {
+        viewModelScope.launch {
+            try {
+                if (featureMatchingEngine == null) {
+                    Log.w(TAG, "FeatureMatchingEngine nicht initialisiert")
+                    return@launch
+                }
+                
+                processedLandmarks.clear()
+                
+                val currentRoute = _currentRoute.value
+                if (currentRoute != null) {
+                    // Lade nur die Landmarks, die in der aktuellen Route verwendet werden
+                    processedLandmarks.addAll(featureMatchingEngine!!.loadRouteSpecificLandmarks(currentRoute.route))
+                    Log.i(TAG, "${processedLandmarks.size} route-spezifische Landmarks für Feature-Matching geladen")
+                    
+                    // Lade Features für echtes Feature-Matching
+                    if (processedLandmarks.isNotEmpty()) {
+                        Log.i(TAG, "Lade Features für echtes Feature-Matching...")
+                        featureMatchingEngine!!.loadLandmarkFeatures(processedLandmarks)
+                    }
+                    
+                    // Feature-Mapping ist verfügbar wenn Landmarks geladen wurden
+                    _isFeatureMappingEnabled.value = processedLandmarks.isNotEmpty()
+                    
+                    Log.i(TAG, "Landmarks für aktuelle Route erfolgreich geladen: ${processedLandmarks.size} Landmarks")
+                    
+                    // Automatischer Feature-Matching Test
+                    testFeatureMatchingWithLandmarkImage(context)
+                } else {
+                    Log.w(TAG, "Keine Route verfügbar für Landmark-Loading")
+                    _isFeatureMappingEnabled.value = false
+                }
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Fehler beim Laden der Route-Landmarks: ${e.message}")
                 _isFeatureMappingEnabled.value = false
             }
         }
@@ -639,29 +653,69 @@ class RouteViewModel : ViewModel() {
         }
     }
     
+    /**
+     * Testet Feature-Matching mit einem Landmark-Bild
+     */
+    private fun testFeatureMatchingWithLandmarkImage(context: Context) {
+        viewModelScope.launch {
+            try {
+                Log.i(TAG, "🧪 Starting feature matching test...")
+                delay(1000) // Kurz warten
+                
+                // Lade ein Test-Bild (das gleiche Bild wie eines der Landmarks)
+                val testImagePath = "landmark_images/PT-1-697.jpg"
+                val inputStream = context.assets.open(testImagePath)
+                val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                inputStream.close()
+                
+                if (bitmap != null) {
+                    Log.i(TAG, "🧪 Test image loaded: ${bitmap.width}x${bitmap.height}")
+                    
+                    // Konvertiere zu OpenCV Mat
+                    val mat = org.opencv.core.Mat()
+                    org.opencv.android.Utils.bitmapToMat(bitmap, mat)
+                    
+                    // Teste Feature-Matching
+                    Log.i(TAG, "🧪 Testing feature matching with PT-1-697 image...")
+                    processFrameForFeatureMatching(mat)
+                    
+                    Log.i(TAG, "🧪 Feature matching test completed!")
+                } else {
+                    Log.e(TAG, "🧪 Failed to load test image")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "🧪 Feature matching test failed: ${e.message}", e)
+            }
+        }
+    }
+    
     // Frame-Processing-Throttling
     private var lastFrameProcessTime = 0L
-    private val frameProcessingInterval = 100L // Verarbeite nur alle 100ms (10 FPS)
+    private val frameProcessingInterval = 200L // Verarbeite nur alle 200ms (5 FPS) - weniger aggressiv für bessere Logs
     
     /**
      * Verarbeitet einen Kamera-Frame für echtes Feature-Matching (optimiert)
      */
     fun processFrameForFeatureMatching(frame: org.opencv.core.Mat) {
+        Log.d(TAG, "processFrameForFeatureMatching called")
+        
         // Nur verarbeiten wenn Feature-Mapping aktiviert ist
         if (!_isFeatureMappingEnabled.value) {
+            Log.d(TAG, "Feature mapping not enabled, skipping frame processing")
             return
         }
         
         // Throttle Frame-Processing für bessere Performance
         val currentTime = System.currentTimeMillis()
         if (currentTime - lastFrameProcessTime < frameProcessingInterval) {
+            Log.d(TAG, "Frame processing throttled (${currentTime - lastFrameProcessTime}ms < ${frameProcessingInterval}ms)")
             return
         }
         lastFrameProcessTime = currentTime
         
         viewModelScope.launch {
             try {
-                Log.v(TAG, "Processing frame for feature matching")
+                Log.i(TAG, "Processing frame for feature matching...")
                 
                 val matches = if (featureMatchingEngine != null) {
                     // Nur echtes Feature-Matching mit OpenCV
@@ -674,14 +728,13 @@ class RouteViewModel : ViewModel() {
                 _currentMatches.value = matches
                 
                 if (matches.isNotEmpty()) {
-                    Log.d(TAG, "Found ${matches.size} landmark matches")
+                    Log.i(TAG, "Found ${matches.size} landmark matches")
                     matches.take(2).forEach { match ->
-                        Log.v(TAG, "- ${match.landmarkId}: ${(match.confidence * 100).toInt()}%")
+                        Log.i(TAG, "- ${match.landmarkId}: ${(match.confidence * 100).toInt()}%")
                     }
                 } else {
-                    Log.w(TAG, "No matches found - this will trigger 'Landmark verloren' after 5 seconds")
+                    Log.d(TAG, "No matches found in current frame")
                 }
-                Log.d(TAG, "==============================")
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Fehler beim Feature-Matching: ${e.message}")
@@ -815,8 +868,7 @@ class RouteViewModel : ViewModel() {
                 try {
                     storageManager?.logPerformanceSummary()
                     
-                    // Bereinige Feature-Storage Cache
-                    landmarkFeatureStorage?.cleanup()
+                    // Feature-Storage wird automatisch bereinigt
                     
                     Log.i(TAG, "RouteViewModel erfolgreich bereinigt")
                 } catch (e: Exception) {

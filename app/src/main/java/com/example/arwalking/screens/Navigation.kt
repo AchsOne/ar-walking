@@ -135,13 +135,17 @@ fun CameraScreen(
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val routeViewModel: RouteViewModel = viewModel()
     
+    Log.d("CameraScreen", "CameraScreen composable started")
+    
     // Lade Route aus JSON-Datei und aktiviere Feature Mapping sofort
     LaunchedEffect(Unit) {
+        Log.d("CameraScreen", "LaunchedEffect started - initializing route and storage")
         routeViewModel.loadNavigationRoute(context)
         // Stelle sicher, dass Feature Mapping sofort aktiv ist
         routeViewModel.enableStorageSystemImmediately(context)
         // Starte Frame-Processing für Feature Matching
         routeViewModel.startFrameProcessing()
+        Log.d("CameraScreen", "LaunchedEffect completed")
     }
     
     // Verwende Route-Informationen aus JSON oder Fallback-Werte
@@ -172,6 +176,7 @@ fun CameraScreen(
     }
 
     LaunchedEffect(hasPermission) {
+        Log.d("CameraScreen", "Camera permission status: $hasPermission")
         if (!hasPermission) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
                 ActivityCompat.shouldShowRequestPermissionRationale(
@@ -179,10 +184,14 @@ fun CameraScreen(
                     Manifest.permission.CAMERA
                 )
             ) {
+                Log.d("CameraScreen", "Showing permission rationale dialog")
                 showRationaleDialog = true
             } else {
+                Log.d("CameraScreen", "Requesting camera permission")
                 launcher.launch(Manifest.permission.CAMERA)
             }
+        } else {
+            Log.d("CameraScreen", "Camera permission granted, initializing camera")
         }
     }
 
@@ -199,6 +208,7 @@ fun CameraScreen(
                 onFrameProcessed = { bitmap ->
                     // Frame für Feature Mapping verarbeiten
                     try {
+                        Log.d("CameraScreen", "Frame received: ${bitmap.width}x${bitmap.height}")
                         val mat = Mat()
                         Utils.bitmapToMat(bitmap, mat)
                         routeViewModel.processFrameForFeatureMatching(mat)
@@ -596,15 +606,20 @@ fun CameraPreviewView(
                             }
 
                         val imageAnalysis = if (onFrameProcessed != null) {
+                            Log.d("CameraPreview", "Setting up image analysis with frame processing")
                             ImageAnalysis.Builder()
                                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                                 .build()
                                 .also { analysis ->
                                     analysis.setAnalyzer(ContextCompat.getMainExecutor(previewView.context)) { imageProxy ->
                                             try {
+                                                Log.d("CameraPreview", "Processing frame: ${imageProxy.width}x${imageProxy.height}")
                                                 val bitmap = imageProxyToBitmap(imageProxy)
                                                 if (bitmap != null) {
+                                                    Log.d("CameraPreview", "Bitmap created: ${bitmap.width}x${bitmap.height}")
                                                     onFrameProcessed(bitmap)
+                                                } else {
+                                                    Log.w("CameraPreview", "Failed to create bitmap from imageProxy")
                                                 }
                                             } catch (e: Exception) {
                                                 Log.e("CameraPreview", "Frame processing error: ${e.message}")
@@ -613,7 +628,10 @@ fun CameraPreviewView(
                                             }
                                         }
                                 }
-                        } else null
+                        } else {
+                            Log.d("CameraPreview", "No frame processing callback provided")
+                            null
+                        }
 
                         val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
                         cameraProvider.unbindAll()

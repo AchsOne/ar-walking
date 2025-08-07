@@ -1,6 +1,8 @@
 package com.example.arwalking.screens
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -77,10 +79,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.UUID
+import org.opencv.android.Utils
+import org.opencv.core.Mat
 
 
 @Composable
@@ -88,6 +93,7 @@ fun HomeScreen(
     navController: NavController,
     modifier: Modifier = Modifier
 ) {
+    Log.d("HomeScreen", "HomeScreen composable started")
     var startDropdownExpanded by remember { mutableStateOf(false) }
     var destinationDropdownExpanded by remember { mutableStateOf(false) }
     var selectedStart by remember { mutableStateOf("Start suchen...") }
@@ -102,6 +108,8 @@ fun HomeScreen(
 
     val routeViewModel: RouteViewModel = viewModel()
     val context = LocalContext.current
+    
+
 
 
 

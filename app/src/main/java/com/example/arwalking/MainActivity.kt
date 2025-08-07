@@ -118,7 +118,7 @@ fun ARWalkingApp() {
     CompositionLocalProvider(LocalNavController provides navController) {
         NavHost(
             navController = navController,
-            startDestination = "home"
+            startDestination = "home" // Zurück zu normal
         ) {
             composable("home") {
                 HomeScreen(navController = navController)
