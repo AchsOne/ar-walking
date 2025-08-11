@@ -140,12 +140,23 @@ fun CameraScreen(
     // Lade Route aus JSON-Datei und aktiviere Feature Mapping sofort
     LaunchedEffect(Unit) {
         Log.d("CameraScreen", "LaunchedEffect started - initializing route and storage")
+        
+        // 1. Zuerst Route laden
         routeViewModel.loadNavigationRoute(context)
-        // Stelle sicher, dass Feature Mapping sofort aktiv ist
+        
+        // 2. Kurz warten, damit Route geladen wird
+        kotlinx.coroutines.delay(100)
+        
+        // 3. Dann Storage-System aktivieren (lädt automatisch Landmarks)
         routeViewModel.enableStorageSystemImmediately(context)
-        // Starte Frame-Processing für Feature Matching
+        
+        // 4. Navigation starten (aktiviert automatisch Feature-Mapping)
+        routeViewModel.startNavigation()
+        
+        // 5. Frame-Processing starten
         routeViewModel.startFrameProcessing()
-        Log.d("CameraScreen", "LaunchedEffect completed")
+        
+        Log.d("CameraScreen", "LaunchedEffect completed - Route, Navigation und Feature-Matching initialisiert")
     }
     
     // Verwende Route-Informationen aus JSON oder Fallback-Werte
@@ -668,7 +679,6 @@ fun CameraPreviewView(
     )
 }
 
-// Improved bitmap conversion function
 private fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
     return try {
         when (imageProxy.format) {

@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PointF
+import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,13 +18,14 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.arwalking.FeatureMatchResult
+import com.example.arwalking.ar.SimpleARRenderer
 import kotlinx.coroutines.delay
 import kotlin.math.*
 
 /**
  * 3D-Pfeil Overlay für AR-Navigation (Snapchat-Style)
- * Zeigt einen 3D-Pfeil an, der auf erkannte Landmarks zeigt
- * Unterstützt GLB-Modelle für realistischere 3D-Darstellung
+ * Zeigt einen 3D-Pfeil an, der in der realen Welt getrackt wird
+ * Verwendet Pose-Estimation und echtes 3D-Tracking wie Snapchat
  */
 @Composable
 fun AR3DArrowOverlay(
@@ -50,43 +52,61 @@ fun AR3DArrowOverlay(
         }
     }
     
+    // Debug-Informationen
+    Log.d("AR3DArrowOverlay", "🔍 Feature-Mapping: $isFeatureMappingEnabled, Matches: ${matches.size}")
+    matches.forEach { match ->
+        Log.d("AR3DArrowOverlay", "  📍 ${match.landmarkId}: ${(match.confidence * 100).toInt()}%")
+    }
+    
     // Nur den besten Match verwenden
     val bestMatch = matches.maxByOrNull { it.confidence }
     
-    if (isFeatureMappingEnabled && bestMatch != null && bestMatch.confidence >= 0.7f) {
+    if (isFeatureMappingEnabled && bestMatch != null && bestMatch.confidence >= 0.3f) {
+        Log.i("AR3DArrowOverlay", "🎯 Zeige AR-Pfeil für: ${bestMatch.landmarkId} (${(bestMatch.confidence * 100).toInt()}%)")
         
-        // Berechne die Position des Pfeils basierend auf dem Landmark
-        val arrowPosition = if (bestMatch.landmark != null) {
-            calculateArrowPosition(
-                landmark = convertToFeatureLandmark(bestMatch.landmark!!),
-                screenPosition = bestMatch.screenPosition,
-                screenWidth = screenWidth,
-                screenHeight = screenHeight
+        // Verwende AR-Objekt-Position wenn verfügbar (Snapchat-Style)
+        val arrowPosition = if (bestMatch.arObject != null) {
+            Log.i("AR3DArrowOverlay", "🎯 Verwende AR-3D-Position: ${bestMatch.arObject.screenPosition}")
+            Offset(
+                bestMatch.arObject.screenPosition.x,
+                bestMatch.arObject.screenPosition.y
             )
         } else {
-            Offset(screenWidth / 2, screenHeight / 2)
+            // Fallback auf 2D-Position
+            Offset(
+                bestMatch.position.x,
+                bestMatch.position.y
+            )
         }
         
-        // Berechne die Richtung des Pfeils mit Navigationsdaten
-        val arrowDirection = if (bestMatch.landmark != null) {
-            calculateArrowDirection(
-                landmark = convertToFeatureLandmark(bestMatch.landmark!!),
-                currentStep = currentStep,
-                totalSteps = totalSteps,
-                currentInstruction = currentInstruction
-            )
+        // Berechne die Richtung des Pfeils basierend auf AR-Pose
+        val arrowDirection = if (bestMatch.arObject != null) {
+            bestMatch.arObject.rotation
         } else {
-            0f
+            0f // Fallback
         }
         
         Box(modifier = modifier.fillMaxSize()) {
             Canvas(modifier = Modifier.fillMaxSize()) {
-                draw3DArrow(
-                    position = arrowPosition,
-                    direction = arrowDirection,
-                    confidence = bestMatch.confidence,
-                    size = size
-                )
+                if (bestMatch.arObject != null) {
+                    // Snapchat-Style 3D-Rendering
+                    drawSnapchatStyle3DArrow(
+                        position = arrowPosition,
+                        direction = arrowDirection,
+                        confidence = bestMatch.confidence,
+                        scale = bestMatch.arObject.scale,
+                        arPose = bestMatch.arPose,
+                        size = size
+                    )
+                } else {
+                    // Fallback 2D-Rendering
+                    draw3DArrow(
+                        position = arrowPosition,
+                        direction = arrowDirection,
+                        confidence = bestMatch.confidence,
+                        size = size
+                    )
+                }
             }
         }
     }
@@ -333,28 +353,13 @@ fun Animated3DArrowOverlay(
         }
     }
     
-    if (isFeatureMappingEnabled && bestMatch != null && bestMatch.confidence >= 0.7f) {
-        val arrowPosition = if (bestMatch.landmark != null) {
-            calculateArrowPosition(
-                landmark = convertToFeatureLandmark(bestMatch.landmark!!),
-                screenPosition = bestMatch.screenPosition,
-                screenWidth = screenWidth,
-                screenHeight = screenHeight
-            )
-        } else {
-            Offset(screenWidth / 2, screenHeight / 2)
-        }
+    if (isFeatureMappingEnabled && bestMatch != null && bestMatch.confidence >= 0.3f) {
+        val arrowPosition = Offset(
+            bestMatch.position.x,
+            bestMatch.position.y
+        )
         
-        val arrowDirection = if (bestMatch.landmark != null) {
-            calculateArrowDirection(
-                landmark = convertToFeatureLandmark(bestMatch.landmark!!),
-                currentStep = currentStep,
-                totalSteps = totalSteps,
-                currentInstruction = currentInstruction
-            )
-        } else {
-            0f
-        }
+        val arrowDirection = 0f // Vereinfacht für jetzt
         
         Box(modifier = modifier.fillMaxSize()) {
             Canvas(modifier = Modifier.fillMaxSize()) {
@@ -367,6 +372,109 @@ fun Animated3DArrowOverlay(
                 )
             }
         }
+    }
+}
+
+/**
+ * Zeichnet einen Snapchat-Style 3D-Pfeil mit realistischer Perspektive
+ */
+private fun DrawScope.drawSnapchatStyle3DArrow(
+    position: Offset,
+    direction: Float,
+    confidence: Float,
+    scale: Float,
+    arPose: SimpleARRenderer.SimpleARPose?,
+    size: androidx.compose.ui.geometry.Size
+) {
+    // Berechne Größe basierend auf Z-Tiefe (Perspektive)
+    val depth = arPose?.depth ?: 2.0f
+    val perspectiveScale = arPose?.scale ?: 1.0f
+    val arrowSize = 80.dp.toPx() * scale * perspectiveScale
+    
+    // Farbe basierend auf Confidence und Tiefe - Snapchat-Style
+    val baseColor = Color(0xFF00FF88) // Snapchat-Grün
+    val alpha = (confidence * 0.9f + 0.1f) * (1.0f - depth * 0.1f).coerceIn(0.3f, 1.0f)
+    val arrowColor = baseColor.copy(alpha = alpha)
+    
+    // Schatten für 3D-Effekt
+    val shadowOffset = Offset(
+        arrowSize * 0.1f * cos(Math.toRadians(45.0)).toFloat(),
+        arrowSize * 0.1f * sin(Math.toRadians(45.0)).toFloat()
+    )
+    
+    drawIntoCanvas { canvas ->
+        canvas.save()
+        
+        // Transformiere zu Pfeil-Position
+        canvas.translate(position.x, position.y)
+        canvas.rotate(direction)
+        canvas.scale(perspectiveScale, perspectiveScale)
+        
+        // Zeichne Schatten
+        canvas.translate(shadowOffset.x, shadowOffset.y)
+        draw3DArrowShape(
+            canvas.nativeCanvas, 
+            arrowSize, 
+            Color.Black.copy(alpha = 0.3f), 
+            confidence
+        )
+        
+        // Zurück zur Hauptposition
+        canvas.translate(-shadowOffset.x, -shadowOffset.y)
+        
+        // Zeichne Hauptpfeil mit 3D-Effekt
+        draw3DArrowShape(canvas.nativeCanvas, arrowSize, arrowColor, confidence)
+        
+        // Glanz-Effekt für Snapchat-Look
+        val glowPaint = androidx.compose.ui.graphics.Paint().apply {
+            color = Color.White.copy(alpha = 0.4f * confidence)
+            style = PaintingStyle.Stroke
+            strokeWidth = 3.dp.toPx()
+        }
+        
+        // Zeichne Glanz-Outline
+        val arrowPath = createArrowPath(arrowSize)
+        canvas.drawPath(arrowPath, glowPaint)
+        
+        canvas.restore()
+    }
+    
+    // Debug-Info anzeigen
+    if (arPose != null) {
+        drawIntoCanvas { canvas ->
+            val debugPaint = androidx.compose.ui.graphics.Paint().apply {
+                color = Color.White.copy(alpha = 0.7f)
+            }
+            
+            val debugText = "3D: Z=${String.format("%.1f", depth)}, S=${String.format("%.2f", perspectiveScale)}"
+            canvas.nativeCanvas.drawText(
+                debugText,
+                position.x - 50.dp.toPx(),
+                position.y - arrowSize - 10.dp.toPx(),
+                debugPaint.asFrameworkPaint()
+            )
+        }
+    }
+}
+
+/**
+ * Erstellt einen Pfeil-Path für Outline-Rendering
+ */
+private fun createArrowPath(size: Float): androidx.compose.ui.graphics.Path {
+    return androidx.compose.ui.graphics.Path().apply {
+        // Pfeilspitze
+        moveTo(size * 0.5f, 0f)
+        lineTo(0f, size * 0.3f)
+        lineTo(size * 0.2f, size * 0.3f)
+        
+        // Pfeilschaft
+        lineTo(size * 0.2f, size)
+        lineTo(size * 0.8f, size)
+        lineTo(size * 0.8f, size * 0.3f)
+        
+        // Zurück zur Spitze
+        lineTo(size, size * 0.3f)
+        close()
     }
 }
 

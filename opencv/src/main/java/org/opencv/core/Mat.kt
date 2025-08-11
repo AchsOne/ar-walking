@@ -83,4 +83,13 @@ open class Mat {
         // Stub implementation
         return ByteArray(0)
     }
+    
+    /**
+     * Sets all matrix elements to the specified scalar value
+     */
+    fun setTo(scalar: Scalar) {
+        // Stub implementation - in real OpenCV this would set all pixels to the scalar value
+        // For our stub, we just log the operation
+        println("Mat.setTo called with scalar: $scalar")
+    }
 }

@@ -20,23 +20,23 @@ object FeatureMappingConfig {
         const val SIFT_SIGMA = 1.6
         
         // ORB Konfiguration (Fallback/Performance-Option)
-        const val ORB_MAX_FEATURES = 2000 // Erhöht für mehr Features
-        const val ORB_SCALE_FACTOR = 1.15f // Kleinerer Faktor für feinere Skalierung
-        const val ORB_N_LEVELS = 12 // Mehr Level für Multi-Scale Features
-        const val ORB_EDGE_THRESHOLD = 25 // Reduziert für mehr Edge-Features
+        const val ORB_MAX_FEATURES = 3000 // Erhöht für mehr Features
+        const val ORB_SCALE_FACTOR = 1.1f // Kleinerer Faktor für feinere Skalierung
+        const val ORB_N_LEVELS = 16 // Mehr Level für Multi-Scale Features
+        const val ORB_EDGE_THRESHOLD = 15 // Reduziert für mehr Edge-Features
         const val ORB_FIRST_LEVEL = 0
         const val ORB_WTA_K = 2
         const val ORB_PATCH_SIZE = 31
-        const val ORB_FAST_THRESHOLD = 15 // Reduziert für mehr Features
+        const val ORB_FAST_THRESHOLD = 10 // Reduziert für mehr Features
         
-        // Matching Konfiguration - Gelockerte Kriterien
-        const val MATCH_DISTANCE_THRESHOLD = 75.0f // Erhöht für mehr Matches
-        const val MIN_MATCH_CONFIDENCE = 0.4f // Reduziert für mehr Matches
-        const val MIN_REQUIRED_MATCHES = 15 // Minimum Matches für valide Erkennung
+        // Matching Konfiguration - Stark gelockerte Kriterien für Debugging
+        const val MATCH_DISTANCE_THRESHOLD = 150.0f // Stark erhöht für mehr Matches
+        const val MIN_MATCH_CONFIDENCE = 0.03f // Stark reduziert für Debugging (war 0.2f)
+        const val MIN_REQUIRED_MATCHES = 3 // Minimum Matches für valide Erkennung (reduziert)
         const val MAX_MATCH_RESULTS = 5 // Mehr Ergebnisse berücksichtigen
         
         // Lowe's Ratio Test für robusteres Matching
-        const val LOWE_RATIO_THRESHOLD = 0.8f // Standard: 0.7, gelockert für mehr Matches
+        const val LOWE_RATIO_THRESHOLD = 0.95f // Noch weiter gelockert für mehr Matches
         
         // Multi-Scale Feature Detection
         const val ENABLE_MULTI_SCALE = true

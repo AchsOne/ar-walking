@@ -145,7 +145,7 @@ private fun FeatureMatchCard(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    text = match.landmark?.name ?: match.landmarkId,
+                    text = match.landmarkId,
                     color = Color.White,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold
@@ -249,7 +249,7 @@ fun FeatureMatchDebugOverlay(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = match.landmark?.id ?: match.landmarkId,
+                            text = match.landmarkId,
                             color = Color.White.copy(alpha = 0.7f),
                             fontSize = 10.sp,
                             modifier = Modifier.weight(1f)
