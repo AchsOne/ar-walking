@@ -8,15 +8,18 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import com.example.arwalking.screens.CameraNavigation
+import com.example.arwalking.screens.ARCameraScreen
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.navigation.compose.NavHost
@@ -27,8 +30,36 @@ import com.example.arwalking.screens.LocalNavController
 import com.example.arwalking.ui.theme.ARWalkingTheme
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import android.widget.Toast
+import org.opencv.android.BaseLoaderCallback
+import org.opencv.android.LoaderCallbackInterface
+import org.opencv.android.OpenCVLoader
 
 class MainActivity : ComponentActivity() {
+
+    companion object {
+        private const val TAG = "MainActivity"
+    }
+
+    // OpenCV Loader Callback
+    private val openCVLoaderCallback = object : BaseLoaderCallback(this) {
+        override fun onManagerConnected(status: Int) {
+            when (status) {
+                LoaderCallbackInterface.SUCCESS -> {
+                    Log.i(TAG, "OpenCV loaded successfully")
+                }
+                else -> {
+                    super.onManagerConnected(status)
+                    Log.e(TAG, "OpenCV initialization failed with status: $status")
+                    Toast.makeText(
+                        this@MainActivity,
+                        "OpenCV initialization failed",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
 
     private val cameraPermissionLauncher: ActivityResultLauncher<String> =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -54,10 +85,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        Log.d(TAG, "MainActivity onCreate")
+        
         enableEdgeToEdge()
-        // Entferne checkCameraAndLaunch() - wird über Navigation gehandhabt
         setContent {
             ARWalkingTheme {
                 Surface(
@@ -67,6 +102,20 @@ class MainActivity : ComponentActivity() {
                     ARWalkingApp()
                 }
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Log.d(TAG, "MainActivity onResume")
+        
+        // Initialize OpenCV
+        if (!OpenCVLoader.initDebug()) {
+            Log.d(TAG, "Internal OpenCV library not found. Using OpenCV Manager for initialization")
+            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION, this, openCVLoaderCallback)
+        } else {
+            Log.d(TAG, "OpenCV library found inside package. Using it!")
+            openCVLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS)
         }
     }
 }
@@ -88,7 +137,8 @@ fun ARWalkingApp() {
                 val encodedStartLocation = backStackEntry.arguments?.getString("startLocation") ?: "Unbekannter Start"
                 val destination = URLDecoder.decode(encodedDestination, StandardCharsets.UTF_8.toString())
                 val startLocation = URLDecoder.decode(encodedStartLocation, StandardCharsets.UTF_8.toString())
-                CameraNavigation(
+                ARCameraScreen(
+                    mainNavController = navController,
                     destination = destination,
                     startLocation = startLocation
                 )

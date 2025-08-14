@@ -1,5 +1,5 @@
 [versions]
-agp = "8.11.1"
+agp = "8.12.0"
 blurview = "1.6.6"
 kotlin = "2.0.0"
 coreKtx = "1.16.0"
@@ -11,6 +11,7 @@ activityCompose = "1.10.1"
 composeBom = "2024.04.01"
 navigationCompose = "2.9.2"
 camera = "1.4.2"
+opencv = "4.8.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -38,6 +39,9 @@ androidx-camera-core = { group = "androidx.camera", name = "camera-core", versio
 androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camera" }
 androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camera" }
 androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camera" }
+
+# OpenCV
+opencv-android = { group = "org.opencv", name = "opencv-android", version.ref = "opencv" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

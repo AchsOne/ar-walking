@@ -87,7 +87,7 @@ fun CameraNavigation(
         startDestination = Screen.Camera.route
     ) {
         composable(Screen.Camera.route) {
-            CameraScreen(
+            ARCameraScreen(
                 mainNavController = mainNavController, 
                 destination = destination,
                 startLocation = startLocation

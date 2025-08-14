@@ -43,6 +43,7 @@ dependencies {
     // AndroidX Core & Lifecycle
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.9.1")
 
     // Compose
     implementation(libs.androidx.activity.compose)
@@ -64,6 +65,24 @@ dependencies {
     implementation("androidx.camera:camera-camera2:1.2.3")
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
+
+    // ARCore
+    implementation("com.google.ar:core:1.45.0")
+    implementation("com.google.ar.sceneform:core:1.17.1")
+    implementation("com.google.ar.sceneform:animation:1.17.1")
+    implementation("com.google.ar.sceneform:rendering:1.17.1")
+
+    // JSON parsing
+    implementation("com.google.code.gson:gson:2.10.1")
+    
+    // Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    
+    // File operations
+    implementation("androidx.documentfile:documentfile:1.0.1")
+
+    // OpenCV
+    implementation(libs.opencv.android)
 
     // Testing
     testImplementation(libs.junit)
