@@ -10,7 +10,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import com.example.arwalking.data.ARNavigationConfig
 import com.example.arwalking.data.NavigationStep
 import com.example.arwalking.data.MatchResult
-import com.example.arwalking.data.TrackingQuality
 
 /**
  * LandmarkRecognizer - Main recognition engine with frame processing loop

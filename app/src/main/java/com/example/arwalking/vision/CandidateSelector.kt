@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.example.arwalking.data.ARNavigationConfig
 import com.example.arwalking.data.NavigationStep
+import com.example.arwalking.data.MatchResult
 
 /**
  * CandidateSelector - Optimizes performance by pre-selecting top-K landmark candidates

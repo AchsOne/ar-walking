@@ -20,14 +20,13 @@ class FeatureEngine(private val config: ARNavigationConfig) {
     companion object {
         private const val TAG = "FeatureEngine"
         private const val MIN_MATCHES_FOR_HOMOGRAPHY = 4
-        private const val DEFAULT_RATIO_TEST_THRESHOLD = 0.75f
     }
 
     private val orb: ORB by lazy {
         ORB.create(
-            config.orbMaxFeatures,
-            1.2f, // scaleFactor
-            8,    // nLevels
+            config.feature.nFeatures,
+            config.feature.scaleFactor,
+            config.feature.nLevels,
             31,   // edgeThreshold
             0,    // firstLevel
             2,    // WTA_K
@@ -152,7 +151,7 @@ class FeatureEngine(private val config: ARNavigationConfig) {
      */
     private fun applyRatioTest(knnMatches: List<MatOfDMatch>): List<DMatch> {
         val goodMatches = mutableListOf<DMatch>()
-        val ratioThreshold = config.matcher?.ratio ?: DEFAULT_RATIO_TEST_THRESHOLD
+        val ratioThreshold = config.matcher.ratio
 
         for (knnMatch in knnMatches) {
             val matches = knnMatch.toArray()
@@ -190,9 +189,9 @@ class FeatureEngine(private val config: ARNavigationConfig) {
             val refMat = MatOfPoint2f(*refPoints.toTypedArray())
             val mask = Mat()
 
-            val reprojThreshold = config.ransac?.reprojThreshold?.toDouble() ?: 3.0
-            val maxIters = config.ransac?.maxIters ?: 2000
-            val confidence = config.ransac?.confidence?.toDouble() ?: 0.995
+            val reprojThreshold = config.ransac.reprojThreshold.toDouble()
+            val maxIters = config.ransac.maxIters
+            val confidence = config.ransac.confidence.toDouble()
 
             val homography = Calib3d.findHomography(
                 queryMat,

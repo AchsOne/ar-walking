@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import org.opencv.core.Mat
 import com.example.arwalking.domain.ARNavigationEngine
+import com.example.arwalking.domain.NavigationStats
 import com.example.arwalking.data.*
 import com.example.arwalking.ar.ArrowPose
 import com.google.ar.core.Frame

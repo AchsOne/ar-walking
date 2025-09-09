@@ -133,7 +133,7 @@ enum class ArrowDirection {
     UP,
     DOWN,
     NONE;
-    
+
     companion object {
         fun fromInstruction(instruction: String): ArrowDirection {
             val lowerInstruction = instruction.lowercase()
@@ -141,120 +141,13 @@ enum class ArrowDirection {
                 lowerInstruction.contains("links") || lowerInstruction.contains("left") -> LEFT
                 lowerInstruction.contains("rechts") || lowerInstruction.contains("right") -> RIGHT
                 lowerInstruction.contains("zurück") || lowerInstruction.contains("back") -> BACK
-                lowerInstruction.contains("hoch") || lowerInstruction.contains("up") || 
-                lowerInstruction.contains("treppe") || lowerInstruction.contains("stairs") -> UP
+                lowerInstruction.contains("hoch") || lowerInstruction.contains("up") ||
+                    lowerInstruction.contains("treppe") || lowerInstruction.contains("stairs") -> UP
                 lowerInstruction.contains("runter") || lowerInstruction.contains("down") -> DOWN
                 lowerInstruction.contains("gerade") || lowerInstruction.contains("straight") ||
-                lowerInstruction.contains("durch") || lowerInstruction.contains("through") -> FORWARD
+                    lowerInstruction.contains("durch") || lowerInstruction.contains("through") -> FORWARD
                 else -> FORWARD
             }
         }
-    }
-}
-
-/**
- * Configuration for the AR navigation system
- */
-data class ARNavigationConfig(
-    val picturesDir: String = "images",
-    val cacheDir: String = "feature_cache",
-    val feature: FeatureConfig = FeatureConfig(),
-    val matcher: MatcherConfig = MatcherConfig(),
-    val ransac: RansacConfig = RansacConfig(),
-    val topK: Int = 10,
-    val thresholds: ThresholdConfig = ThresholdConfig(),
-    val frameResizeWidth: Int = 960,
-    val stabilization: StabilizationConfig = StabilizationConfig(),
-    val arrow: ArrowConfig = ArrowConfig()
-)
-
-data class FeatureConfig(
-    val type: String = "ORB",
-    val nFeatures: Int = 2000,
-    val scaleFactor: Float = 1.2f,
-    val nLevels: Int = 8
-)
-
-data class MatcherConfig(
-    val ratio: Float = 0.75f
-)
-
-data class RansacConfig(
-    val reprojThreshold: Float = 3.0f,
-    val maxIters: Int = 2000,
-    val confidence: Float = 0.995f
-)
-
-data class ThresholdConfig(
-    val match: Float = 0.35f,
-    val promote: Float = 0.50f,
-    val demote: Float = 0.25f
-)
-
-data class StabilizationConfig(
-    val emaAlpha: Float = 0.2f,
-    val minStableFrames: Int = 3
-)
-
-data class ArrowConfig(
-    val scale: Float = 0.1f,
-    val offset: Triple<Float, Float, Float> = Triple(0f, 0f, 0f),
-    val occlusion: Boolean = true,
-    val instantPlacement: Boolean = true
-)
-
-/**
- * Status information for the navigation system
- */
-data class NavigationStatus(
-    val currentLandmarkId: String? = null,
-    val currentStepId: String? = null,
-    val matchConfidence: Float = 0f,
-    val isTracking: Boolean = false,
-    val trackingQuality: TrackingQuality = TrackingQuality.NONE
-)
-
-enum class TrackingQuality {
-    NONE,
-    INSUFFICIENT,
-    SUFFICIENT,
-    NORMAL
-}
-
-/**
- * Feature matching result
- */
-data class MatchResult(
-    val landmarkId: String,
-    val confidence: Float,
-    val inliers: Int,
-    val keypoints: Int,
-    val homography: FloatArray? = null
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (javaClass != other?.javaClass) return false
-
-        other as MatchResult
-
-        if (landmarkId != other.landmarkId) return false
-        if (confidence != other.confidence) return false
-        if (inliers != other.inliers) return false
-        if (keypoints != other.keypoints) return false
-        if (homography != null) {
-            if (other.homography == null) return false
-            if (!homography.contentEquals(other.homography)) return false
-        } else if (other.homography != null) return false
-
-        return true
-    }
-
-    override fun hashCode(): Int {
-        var result = landmarkId.hashCode()
-        result = 31 * result + confidence.hashCode()
-        result = 31 * result + inliers
-        result = 31 * result + keypoints
-        result = 31 * result + (homography?.contentHashCode() ?: 0)
-        return result
     }
 }

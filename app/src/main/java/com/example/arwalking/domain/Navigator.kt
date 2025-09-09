@@ -7,7 +7,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import com.example.arwalking.data.NavigationRoute
 import com.example.arwalking.data.NavigationStep
 import com.example.arwalking.data.ARNavigationConfig
-import com.example.arwalking.vision.MatchResult
+import com.example.arwalking.data.MatchResult
 
 /**
  * Navigator - Manages navigation state and step transitions
