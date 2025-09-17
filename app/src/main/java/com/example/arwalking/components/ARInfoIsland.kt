@@ -22,6 +22,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import android.util.Log
 
 /**
  * AR Info Island - Semitransparente UI-Komponente im Apple Dynamic Island Style
@@ -307,33 +308,82 @@ fun rememberARScanStatus(
     isTracking: Boolean
 ): ARScanStatus {
     var currentStatus by remember { mutableStateOf(ARScanStatus.INITIALIZING) }
-    var stableTrackingState by remember { mutableStateOf(true) }
-    var lastTrackingTime by remember { mutableStateOf(System.currentTimeMillis()) }
-    
+    var stableTrackingState by remember { mutableStateOf(false) } // Initial false
+    var lastTrackingTime by remember { mutableStateOf(0L) } // Initial 0
+    var wasTrackingBefore by remember { mutableStateOf(false) } // Neue Variable
+
+    // Debug-Logging für alle Parameter bei jeder Änderung
+    LaunchedEffect(isInitialized, landmarkCount, bestConfidence, isTracking) {
+        Log.d("ARScan", "=== Parameter Update ===")
+        Log.d("ARScan", "isInitialized: $isInitialized (should be true when AR is ready)")
+        Log.d("ARScan", "landmarkCount: $landmarkCount (should be > 0 when landmarks detected)")
+        Log.d("ARScan", "bestConfidence: $bestConfidence (should be 0.0-1.0, >0.7 is good)")
+        Log.d("ARScan", "isTracking: $isTracking (should reflect real tracking state)")
+        Log.d("ARScan", "wasTrackingBefore: $wasTrackingBefore")
+        Log.d("ARScan", "stableTrackingState: $stableTrackingState")
+    }
+
     // Stabilisiere den Tracking-Status um falsches "Tracking verloren" zu vermeiden
     LaunchedEffect(isTracking) {
+        Log.d("ARScan", "--- Tracking State Change ---")
+        Log.d("ARScan", "isTracking changed to: $isTracking, wasTrackingBefore: $wasTrackingBefore")
+
         if (isTracking) {
+            Log.d("ARScan", "Tracking started - setting stable state to true")
             stableTrackingState = true
+            wasTrackingBefore = true
             lastTrackingTime = System.currentTimeMillis()
-        } else {
-            // Warte 5 Sekunden ohne Tracking bevor "Tracking verloren" angezeigt wird
+        } else if (wasTrackingBefore) {
+            Log.d("ARScan", "Tracking lost - starting 5 second timer")
             delay(5000)
-            if (System.currentTimeMillis() - lastTrackingTime >= 5000) {
+            val currentTime = System.currentTimeMillis()
+            val timeDiff = currentTime - lastTrackingTime
+            Log.d("ARScan", "5 seconds elapsed - time difference: ${timeDiff}ms")
+            if (timeDiff >= 5000) {
+                Log.d("ARScan", "Setting tracking lost state")
                 stableTrackingState = false
+            } else {
+                Log.d("ARScan", "Time check failed - not setting tracking lost")
+            }
+        } else {
+            Log.d("ARScan", "Tracking false but never tracked before - ignoring")
+        }
+    }
+
+    LaunchedEffect(isInitialized, landmarkCount, bestConfidence, stableTrackingState) {
+        val previousStatus = currentStatus
+
+        currentStatus = when {
+            !isInitialized -> {
+                Log.d("ARScan", "Status: INITIALIZING (AR not initialized)")
+                ARScanStatus.INITIALIZING
+            }
+            !stableTrackingState && wasTrackingBefore -> {
+                Log.d("ARScan", "Status: TRACKING_LOST (lost tracking after having it)")
+                ARScanStatus.TRACKING_LOST
+            }
+            landmarkCount == 0 -> {
+                Log.d("ARScan", "Status: SCANNING (no landmarks found)")
+                ARScanStatus.SCANNING
+            }
+            bestConfidence < 0.4f -> {
+                Log.d("ARScan", "Status: LOW_CONFIDENCE (confidence: $bestConfidence < 0.4)")
+                ARScanStatus.LOW_CONFIDENCE
+            }
+            bestConfidence < 0.7f -> {
+                Log.d("ARScan", "Status: MOVE_CAMERA (confidence: $bestConfidence < 0.7)")
+                ARScanStatus.MOVE_CAMERA
+            }
+            else -> {
+                Log.d("ARScan", "Status: LANDMARK_FOUND (confidence: $bestConfidence >= 0.7)")
+                ARScanStatus.LANDMARK_FOUND
             }
         }
-    }
-    
-    LaunchedEffect(isInitialized, landmarkCount, bestConfidence, stableTrackingState) {
-        currentStatus = when {
-            !isInitialized -> ARScanStatus.INITIALIZING
-            !stableTrackingState -> ARScanStatus.TRACKING_LOST
-            landmarkCount == 0 -> ARScanStatus.SCANNING
-            bestConfidence < 0.4f -> ARScanStatus.LOW_CONFIDENCE
-            bestConfidence < 0.7f -> ARScanStatus.MOVE_CAMERA
-            else -> ARScanStatus.LANDMARK_FOUND
+
+        if (previousStatus != currentStatus) {
+            Log.d("ARScan", "*** STATUS CHANGED: $previousStatus -> $currentStatus ***")
         }
     }
-    
+
     return currentStatus
 }

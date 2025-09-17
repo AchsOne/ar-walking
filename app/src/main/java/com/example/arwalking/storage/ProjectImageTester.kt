@@ -44,12 +44,12 @@ class ProjectImageTester(private val context: Context) {
             
             if (landmarks.isEmpty()) {
                 Log.w(TAG, "⚠️ Keine Bilder im Projektverzeichnis gefunden!")
-                Log.i(TAG, "📁 Pfad: ${ProjectDirectoryImageManager.PROJECT_LANDMARK_IMAGES_PATH}")
+                Log.i(TAG, "📁 Pfad: ${ProjectDirectoryImageManager.PROJECT_ASSETS_PATH}")
                 Log.i(TAG, "💡 Tipp: Kopiere Bilder in das landmark_images Verzeichnis")
             } else {
                 Log.i(TAG, "✅ ${landmarks.size} Bilder im Projektverzeichnis gefunden:")
                 landmarks.forEach { landmark ->
-                    Log.i(TAG, "  - ${landmark.id} (${landmark.filename}, ${String.format("%.1f", landmark.getFileSizeKB())} KB)")
+                    Log.i(TAG, "  - ${landmark.id} (${landmark.filename}")
                 }
             }
         } catch (e: Exception) {
@@ -76,8 +76,6 @@ class ProjectImageTester(private val context: Context) {
                 val info = storageManager.getProjectLandmarkInfo(landmark.id)
                 if (info != null) {
                     Log.d(TAG, "    Datei: ${info.filename}")
-                    Log.d(TAG, "    Größe: ${String.format("%.1f", info.getFileSizeMB())} MB")
-                    Log.d(TAG, "    Geändert: ${info.getLastModifiedDate()}")
                 }
             }
         } catch (e: Exception) {
@@ -254,7 +252,7 @@ class ProjectImageTester(private val context: Context) {
                     // Zeige die ersten 5 Bilder
                     Log.i(TAG, "Erste 5 Bilder:")
                     landmarks.take(5).forEach { landmark ->
-                        Log.i(TAG, "  - ${landmark.id} (${String.format("%.1f", landmark.getFileSizeKB())} KB)")
+                        Log.i(TAG, "  - ${landmark.id}")
                     }
                 }
                 

@@ -304,18 +304,19 @@ fun Animated3DArrowOverlay(
             currentStep = currentStep,
             totalSteps = totalSteps
         )
-        
+
         Box(modifier = modifier.fillMaxSize()) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawAnimated3DArrow(
-                    position = arrowPosition,
-                    direction = arrowDirection,
-                    confidence = bestMatch.confidence,
-                    animationProgress = animationProgress,
-                    size = size
-                )
-            }
+            // Canvas(modifier = Modifier.fillMaxSize()) {
+            //     drawAnimated3DArrow(
+            //         position = arrowPosition,
+            //         direction = arrowDirection,
+            //         confidence = bestMatch.confidence,
+            //         animationProgress = animationProgress,
+            //         size = size
+            //     )
+            // }
         }
+
     }
 }
 

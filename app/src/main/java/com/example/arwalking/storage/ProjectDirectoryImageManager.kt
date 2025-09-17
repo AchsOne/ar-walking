@@ -9,81 +9,62 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileInputStream
 
 /**
- * Image Manager für das Laden von Bildern direkt aus dem Projektverzeichnis
- * Pfad: /Users/florian/Documents/GitHub/ar-walking/landmark_images/
- * 
+ * Image Manager für das Laden von Bildern direkt aus den App-Assets
+ * Pfad: app/src/main/assets/landmark_images/
+ *
  * Features:
- * - Lädt Bilder direkt aus dem Projektordner
+ * - Lädt Bilder aus Assets
  * - Kein Trainingsmodus erforderlich
- * - Manuelle Bildverwaltung möglich
  * - LRU-Cache für Performance
  * - Automatische Thumbnail-Generierung
  */
 class ProjectDirectoryImageManager(private val context: Context) {
-    
+
     private val TAG = "ProjectDirectoryImageManager"
-    
+
     companion object {
-        // Projektverzeichnis-Pfad (fest codiert wie gewünscht)
-        const val PROJECT_LANDMARK_IMAGES_PATH = "/Users/florian/Documents/GitHub/ar-walking/landmark_images"
-        
+        const val PROJECT_ASSETS_PATH = "landmark_images"
+
         // Cache-Konfiguration
         const val BITMAP_CACHE_SIZE = 50
         const val THUMBNAIL_CACHE_SIZE = 100
         const val THUMBNAIL_SIZE = 256
     }
-    
-    // Projektverzeichnis für Landmark-Bilder
-    private val projectImagesDir = File(PROJECT_LANDMARK_IMAGES_PATH)
-    
-    // LRU-Caches für Performance
+
+    // LRU-Caches
     private val bitmapCache = LruCache<String, Bitmap>(BITMAP_CACHE_SIZE)
     private val thumbnailCache = LruCache<String, Bitmap>(THUMBNAIL_CACHE_SIZE)
-    
-    // Loading States
+
+    // Ladezustände
     private val _loadingStates = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     val loadingStates: StateFlow<Map<String, Boolean>> = _loadingStates
-    
+
     // Performance Monitor
     private val performanceMonitor = StoragePerformanceMonitor()
-    
+
     init {
-        // Stelle sicher, dass das Projektverzeichnis existiert
-        if (!projectImagesDir.exists()) {
-            Log.w(TAG, "Projektverzeichnis existiert nicht: $PROJECT_LANDMARK_IMAGES_PATH")
-            Log.i(TAG, "Erstelle Verzeichnis...")
-            projectImagesDir.mkdirs()
-        } else {
-            Log.i(TAG, "Projektverzeichnis gefunden: $PROJECT_LANDMARK_IMAGES_PATH")
-            scanAvailableImages()
-        }
+        // Nur loggen, welche Dateien existieren
+        scanAvailableImages()
     }
-    
+
     /**
-     * Scannt verfügbare Bilder im Projektverzeichnis
+     * Scannt verfügbare Bilder in den Assets
      */
     private fun scanAvailableImages() {
         try {
-            val imageFiles = projectImagesDir.listFiles { file ->
-                file.isFile && file.extension.lowercase() in listOf("jpg", "jpeg", "png", "webp")
-            }
-            
-            Log.i(TAG, "Gefundene Bilder: ${imageFiles?.size ?: 0}")
-            imageFiles?.forEach { file ->
-                Log.d(TAG, "- ${file.name}")
-            }
+            val files = context.assets.list(PROJECT_ASSETS_PATH) ?: emptyArray()
+            val images = files.filter { it.endsWith(".jpg", true) || it.endsWith(".jpeg", true) || it.endsWith(".png", true) || it.endsWith(".webp", true) }
+            Log.i(TAG, "Gefundene Asset-Bilder: ${images.size}")
+            images.forEach { Log.d(TAG, "- $it") }
         } catch (e: Exception) {
-            Log.e(TAG, "Fehler beim Scannen der Bilder: ${e.message}")
+            Log.e(TAG, "Fehler beim Scannen der Assets: ${e.message}")
         }
     }
-    
+
     /**
-     * Lädt ein Vollbild aus dem Projektverzeichnis
-     * Unterstützte Formate: .jpg, .jpeg, .png, .webp
+     * Lädt ein Vollbild aus den Assets
      */
     suspend fun loadFullImage(landmarkId: String): Bitmap? = withContext(Dispatchers.IO) {
         performanceMonitor.measureOperation(
@@ -92,39 +73,29 @@ class ProjectDirectoryImageManager(private val context: Context) {
         ) {
             try {
                 updateLoadingState(landmarkId, true)
-                
-                // Prüfe Cache zuerst
-                bitmapCache.get(landmarkId)?.let { cachedBitmap ->
-                    updateLoadingState(landmarkId, false)
-                    Log.d(TAG, "Vollbild aus Cache geladen: $landmarkId")
-                    return@measureOperation cachedBitmap
-                }
-                
-                // Suche Bilddatei im Projektverzeichnis
-                val imageFile = findImageFile(landmarkId)
-                if (imageFile != null && imageFile.exists()) {
-                    val bitmap = BitmapFactory.decodeFile(imageFile.absolutePath)
+
+                // Cache prüfen
+                bitmapCache.get(landmarkId)?.let { return@measureOperation it }
+
+                // Datei finden
+                val fileName = findAssetFileName(landmarkId)
+                if (fileName != null) {
+                    val bitmap = loadBitmapFromAssets(fileName)
                     if (bitmap != null) {
-                        // Cache das Bitmap
                         bitmapCache.put(landmarkId, bitmap)
-                        updateLoadingState(landmarkId, false)
                         Log.d(TAG, "Vollbild geladen: $landmarkId (${bitmap.width}x${bitmap.height})")
                         return@measureOperation bitmap
                     }
                 }
-                
-                updateLoadingState(landmarkId, false)
-                Log.w(TAG, "Vollbild nicht gefunden: $landmarkId")
+
+                Log.w(TAG, "Vollbild nicht gefunden in Assets: $landmarkId")
                 null
-                
-            } catch (e: Exception) {
+            } finally {
                 updateLoadingState(landmarkId, false)
-                Log.e(TAG, "Fehler beim Laden des Vollbildes $landmarkId: ${e.message}")
-                null
             }
         }
     }
-    
+
     /**
      * Lädt ein Thumbnail (generiert es bei Bedarf)
      */
@@ -134,202 +105,128 @@ class ProjectDirectoryImageManager(private val context: Context) {
             landmarkId
         ) {
             try {
-                // Prüfe Thumbnail-Cache zuerst
-                thumbnailCache.get(landmarkId)?.let { cachedThumbnail ->
-                    Log.d(TAG, "Thumbnail aus Cache geladen: $landmarkId")
-                    return@measureOperation cachedThumbnail
-                }
-                
-                // Lade Vollbild und erstelle Thumbnail
-                val fullImage = loadFullImageForThumbnail(landmarkId)
-                if (fullImage != null) {
-                    val thumbnail = createThumbnail(fullImage)
-                    if (thumbnail != null) {
-                        thumbnailCache.put(landmarkId, thumbnail)
-                        Log.d(TAG, "Thumbnail generiert: $landmarkId (${thumbnail.width}x${thumbnail.height})")
-                        return@measureOperation thumbnail
+                // Cache prüfen
+                thumbnailCache.get(landmarkId)?.let { return@measureOperation it }
+
+                // Vollbild laden
+                val fileName = findAssetFileName(landmarkId)
+                if (fileName != null) {
+                    val fullImage = loadBitmapFromAssets(fileName)
+                    if (fullImage != null) {
+                        val thumbnail = createThumbnail(fullImage)
+                        if (thumbnail != null) {
+                            thumbnailCache.put(landmarkId, thumbnail)
+                            Log.d(TAG, "Thumbnail generiert: $landmarkId (${thumbnail.width}x${thumbnail.height})")
+                            return@measureOperation thumbnail
+                        }
                     }
                 }
-                
+
                 Log.w(TAG, "Thumbnail konnte nicht erstellt werden: $landmarkId")
                 null
-                
             } catch (e: Exception) {
                 Log.e(TAG, "Fehler beim Laden des Thumbnails $landmarkId: ${e.message}")
                 null
             }
         }
     }
-    
+
     /**
-     * Lädt Vollbild für Thumbnail-Generierung (ohne Cache-Update)
+     * Hilfsfunktion: Lädt ein Bitmap aus Assets
      */
-    private fun loadFullImageForThumbnail(landmarkId: String): Bitmap? {
+    private fun loadBitmapFromAssets(fileName: String): Bitmap? {
         return try {
-            val imageFile = findImageFile(landmarkId)
-            if (imageFile != null && imageFile.exists()) {
-                // Lade mit reduzierter Auflösung für Thumbnail-Generierung
-                val options = BitmapFactory.Options().apply {
-                    inJustDecodeBounds = true
-                }
-                BitmapFactory.decodeFile(imageFile.absolutePath, options)
-                
-                // Berechne Sample-Size für effiziente Thumbnail-Erstellung
-                options.inSampleSize = calculateInSampleSize(options, THUMBNAIL_SIZE * 2, THUMBNAIL_SIZE * 2)
-                options.inJustDecodeBounds = false
-                
-                BitmapFactory.decodeFile(imageFile.absolutePath, options)
-            } else {
-                null
+            context.assets.open("$PROJECT_ASSETS_PATH/$fileName").use { input ->
+                BitmapFactory.decodeStream(input)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Fehler beim Laden für Thumbnail: ${e.message}")
+            Log.e(TAG, "Fehler beim Laden aus Assets: ${e.message}")
             null
         }
     }
-    
+
     /**
-     * Sucht die Bilddatei für eine Landmark-ID
-     * Unterstützt verschiedene Dateierweiterungen
+     * Sucht die passende Asset-Datei zu einer Landmark-ID
      */
-    private fun findImageFile(landmarkId: String): File? {
-        val extensions = listOf("jpg", "jpeg", "png", "webp")
-        
-        for (extension in extensions) {
-            val file = File(projectImagesDir, "$landmarkId.$extension")
-            if (file.exists()) {
-                return file
-            }
+    private fun findAssetFileName(landmarkId: String): String? {
+        return try {
+            val files = context.assets.list(PROJECT_ASSETS_PATH) ?: return null
+            files.firstOrNull { it.substringBeforeLast(".").equals(landmarkId, ignoreCase = true) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler beim Suchen in Assets: ${e.message}")
+            null
         }
-        
-        // Fallback: Suche nach Dateien die mit der landmarkId beginnen
-        val matchingFiles = projectImagesDir.listFiles { file ->
-            file.isFile && file.nameWithoutExtension.equals(landmarkId, ignoreCase = true)
-        }
-        
-        return matchingFiles?.firstOrNull()
     }
-    
+
     /**
-     * Erstellt ein Thumbnail aus einem Vollbild
+     * Thumbnail erstellen
      */
     private fun createThumbnail(bitmap: Bitmap): Bitmap? {
         return try {
             val width = bitmap.width
             val height = bitmap.height
-            
-            // Berechne neue Dimensionen (quadratisch)
             val size = minOf(width, height)
             val x = (width - size) / 2
             val y = (height - size) / 2
-            
-            // Schneide quadratischen Bereich aus
-            val croppedBitmap = Bitmap.createBitmap(bitmap, x, y, size, size)
-            
-            // Skaliere auf Thumbnail-Größe
-            Bitmap.createScaledBitmap(croppedBitmap, THUMBNAIL_SIZE, THUMBNAIL_SIZE, true)
-            
+            val cropped = Bitmap.createBitmap(bitmap, x, y, size, size)
+            Bitmap.createScaledBitmap(cropped, THUMBNAIL_SIZE, THUMBNAIL_SIZE, true)
         } catch (e: Exception) {
             Log.e(TAG, "Fehler beim Erstellen des Thumbnails: ${e.message}")
             null
         }
     }
-    
+
     /**
-     * Berechnet optimale Sample-Size für Bitmap-Dekodierung
-     */
-    private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
-        val height = options.outHeight
-        val width = options.outWidth
-        var inSampleSize = 1
-        
-        if (height > reqHeight || width > reqWidth) {
-            val halfHeight = height / 2
-            val halfWidth = width / 2
-            
-            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
-                inSampleSize *= 2
-            }
-        }
-        
-        return inSampleSize
-    }
-    
-    /**
-     * Gibt alle verfügbaren Landmark-IDs zurück
+     * Liste aller verfügbaren Landmarks
      */
     suspend fun getAvailableLandmarks(): List<LandmarkInfo> = withContext(Dispatchers.IO) {
         try {
-            val imageFiles = projectImagesDir.listFiles { file ->
-                file.isFile && file.extension.lowercase() in listOf("jpg", "jpeg", "png", "webp")
-            } ?: emptyArray()
-            
-            imageFiles.map { file ->
-                LandmarkInfo(
-                    id = file.nameWithoutExtension,
-                    filename = file.name,
-                    fileSize = file.length(),
-                    lastModified = file.lastModified(),
-                    extension = file.extension.lowercase()
-                )
-            }.sortedBy { it.id }
-            
+            val files = context.assets.list(PROJECT_ASSETS_PATH) ?: return@withContext emptyList()
+            files.filter { it.endsWith(".jpg", true) || it.endsWith(".jpeg", true) || it.endsWith(".png", true) || it.endsWith(".webp", true) }
+                .map { file ->
+                    LandmarkInfo(
+                        id = file.substringBeforeLast("."),
+                        filename = file,
+                        fileSize = 0, // Assets geben keine echte Größe zurück
+                        lastModified = 0,
+                        extension = file.substringAfterLast(".", "")
+                    )
+                }
         } catch (e: Exception) {
-            Log.e(TAG, "Fehler beim Laden der verfügbaren Landmarks: ${e.message}")
+            Log.e(TAG, "Fehler beim Auflisten der Assets: ${e.message}")
             emptyList()
         }
     }
-    
-    /**
-     * Prüft ob ein Landmark-Bild existiert
-     */
+
     fun hasLandmarkImage(landmarkId: String): Boolean {
-        return findImageFile(landmarkId)?.exists() == true
+        return findAssetFileName(landmarkId) != null
     }
-    
-    /**
-     * Gibt Informationen über ein Landmark zurück
-     */
+
     suspend fun getLandmarkInfo(landmarkId: String): LandmarkInfo? = withContext(Dispatchers.IO) {
-        val imageFile = findImageFile(landmarkId)
-        if (imageFile != null && imageFile.exists()) {
+        val fileName = findAssetFileName(landmarkId)
+        if (fileName != null) {
             LandmarkInfo(
                 id = landmarkId,
-                filename = imageFile.name,
-                fileSize = imageFile.length(),
-                lastModified = imageFile.lastModified(),
-                extension = imageFile.extension.lowercase()
+                filename = fileName,
+                fileSize = 0,
+                lastModified = 0,
+                extension = fileName.substringAfterLast(".", "")
             )
-        } else {
-            null
-        }
+        } else null
     }
-    
-    /**
-     * Aktualisiert den Loading-State
-     */
+
     private fun updateLoadingState(landmarkId: String, isLoading: Boolean) {
-        val currentStates = _loadingStates.value.toMutableMap()
-        if (isLoading) {
-            currentStates[landmarkId] = true
-        } else {
-            currentStates.remove(landmarkId)
-        }
-        _loadingStates.value = currentStates
+        val current = _loadingStates.value.toMutableMap()
+        if (isLoading) current[landmarkId] = true else current.remove(landmarkId)
+        _loadingStates.value = current
     }
-    
-    /**
-     * Bereinigt die Caches
-     */
+
     fun clearCaches() {
         bitmapCache.evictAll()
         thumbnailCache.evictAll()
-        Log.i(TAG, "Caches bereinigt")
+        Log.i(TAG, "Caches geleert")
     }
-    
-    /**
-     * Gibt Cache-Statistiken zurück
-     */
+
     fun getCacheStats(): CacheStats {
         return CacheStats(
             bitmapCacheSize = bitmapCache.size(),
@@ -342,57 +239,12 @@ class ProjectDirectoryImageManager(private val context: Context) {
             thumbnailCacheMissCount = thumbnailCache.missCount().toLong()
         )
     }
-    
-    /**
-     * Loggt Performance-Zusammenfassung
-     */
+
     fun logPerformanceSummary() {
         performanceMonitor.logPerformanceSummary()
-        
-        val cacheStats = getCacheStats()
-        Log.i(TAG, "=== CACHE STATISTIKEN ===")
-        Log.i(TAG, "Bitmap Cache: ${cacheStats.bitmapCacheSize}/${cacheStats.bitmapCacheMaxSize}")
-        Log.i(TAG, "Thumbnail Cache: ${cacheStats.thumbnailCacheSize}/${cacheStats.thumbnailCacheMaxSize}")
-        Log.i(TAG, "Bitmap Hit Rate: ${String.format("%.1f", cacheStats.getBitmapHitRate())}%")
-        Log.i(TAG, "Thumbnail Hit Rate: ${String.format("%.1f", cacheStats.getThumbnailHitRate())}%")
-    }
-}
-
-/**
- * Informationen über ein Landmark-Bild
- */
-data class LandmarkInfo(
-    val id: String,
-    val filename: String,
-    val fileSize: Long,
-    val lastModified: Long,
-    val extension: String
-) {
-    fun getFileSizeKB(): Double = fileSize / 1024.0
-    fun getFileSizeMB(): Double = fileSize / (1024.0 * 1024.0)
-    fun getLastModifiedDate(): String = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date(lastModified))
-}
-
-/**
- * Cache-Statistiken
- */
-data class CacheStats(
-    val bitmapCacheSize: Int,
-    val bitmapCacheMaxSize: Int,
-    val thumbnailCacheSize: Int,
-    val thumbnailCacheMaxSize: Int,
-    val bitmapCacheHitCount: Long,
-    val bitmapCacheMissCount: Long,
-    val thumbnailCacheHitCount: Long,
-    val thumbnailCacheMissCount: Long
-) {
-    fun getBitmapHitRate(): Double {
-        val total = bitmapCacheHitCount + bitmapCacheMissCount
-        return if (total > 0) (bitmapCacheHitCount.toDouble() / total) * 100 else 0.0
-    }
-    
-    fun getThumbnailHitRate(): Double {
-        val total = thumbnailCacheHitCount + thumbnailCacheMissCount
-        return if (total > 0) (thumbnailCacheHitCount.toDouble() / total) * 100 else 0.0
+        val stats = getCacheStats()
+        Log.i(TAG, "=== CACHE ===")
+        Log.i(TAG, "Bitmap Cache: ${stats.bitmapCacheSize}/${stats.bitmapCacheMaxSize} (HitRate: ${stats.getBitmapHitRate()}%)")
+        Log.i(TAG, "Thumbnail Cache: ${stats.thumbnailCacheSize}/${stats.thumbnailCacheMaxSize} (HitRate: ${stats.getThumbnailHitRate()}%)")
     }
 }
