@@ -142,17 +142,17 @@ fun CameraScreen(
     val activity = context as Activity
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val routeViewModel: RouteViewModel = viewModel()
-    
-    // Lade Route aus JSON-Datei und aktiviere Feature Mapping sofort
+
+    // Lädt Route und aktiviert Feature Mapping
     LaunchedEffect(Unit) {
         routeViewModel.loadNavigationRoute(context)
-        // Stelle sicher, dass Feature Mapping sofort aktiv ist
+        // Aktiviert Feature Mapping
         routeViewModel.enableStorageSystemImmediately(context)
-        // Starte Frame-Processing für Feature Matching
+        // Startet Frame-Verarbeitung
         routeViewModel.startFrameProcessing()
     }
-    
-    // Verwende Route-Informationen aus JSON oder Fallback-Werte
+
+    // Nutzt Route-Daten oder Fallbacks
     val currentRoute by routeViewModel.currentRoute.collectAsState()
     val actualStartLocation = currentRoute?.let { 
         routeViewModel.getCurrentStartPoint() 

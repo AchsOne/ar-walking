@@ -113,28 +113,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * SCHRITT 4: Initialisiert Feature-Matching System
-     */
     private fun initializeFeatureMatching() {
         CoroutineScope(Dispatchers.Main).launch {
             try {
-                Log.i("FeatureMatchTest", "Initialisiere Feature-Matching System...")
+                Log.i("FeatureMatchTest", "Init Feature-Matching...")
 
-                // 1. Lade alle Landmark-Bilder und erstelle Signaturen
                 val signatures = createLandmarkSignatures()
 
                 if (signatures.isEmpty()) {
-                    Log.w("FeatureMatchTest", "Keine Landmark-Signaturen erstellt")
+                    Log.w("FeatureMatchTest", "Keine Signaturen")
                     return@launch
                 }
 
-                Log.i("FeatureMatchTest", "✅ ${signatures.size} Landmark-Signaturen erstellt")
+                Log.i("FeatureMatchTest", "✅ ${signatures.size} Signaturen erstellt")
 
-                // 2. Teste Feature-Matching zwischen den Landmarks
                 testFeatureMatching(signatures)
 
-                // 3. Simuliere echtes Kamera-Frame Matching
                 simulateCameraFrameMatching(signatures)
 
                 Log.i("FeatureMatchTest", "🎉 Feature-Matching Tests abgeschlossen!")
@@ -147,9 +141,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * Erstellt Feature-Signaturen für alle Landmark-Bilder
-     */
+    // Baut Signaturen aus allen Landmark-Bildern
     private suspend fun createLandmarkSignatures(): List<LandmarkSignature> {
         return withContext(Dispatchers.IO) {
             val signatures = mutableListOf<LandmarkSignature>()
@@ -179,9 +171,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * Erstellt erweiterte Feature-Signatur für ein Landmark
-     */
+    // Erstellt die Signatur für ein Landmark-Bild
     private fun createLandmarkSignature(filename: String): LandmarkSignature? {
         return try {
             val bitmap = loadBitmapFromAssets(filename) ?: return null
@@ -212,9 +202,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * Erstellt Farb-Histogramm (RGB in 4x4x4 Blöcken)
-     */
+    // Erstellt ein 4x4x4 Farb-Histogramm
     private fun createColorHistogram(bitmap: Bitmap): IntArray {
         val histogram = IntArray(64) // 4x4x4 für RGB
         val pixels = IntArray(bitmap.width * bitmap.height)
@@ -234,9 +222,7 @@ class MainActivity : ComponentActivity() {
         return histogram
     }
 
-    /**
-     * Erstellt Textur-Features (Local Binary Pattern-ähnlich)
-     */
+    // Zieht simple Texturkennwerte
     private fun createTextureFeatures(bitmap: Bitmap): FloatArray {
         val features = FloatArray(16)
         val pixels = IntArray(bitmap.width * bitmap.height)

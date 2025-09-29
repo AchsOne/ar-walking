@@ -7,19 +7,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-/**
- * Beispiel-Implementierung für die Verwendung des ArWalking Storage Systems
- * Zeigt die wichtigsten Anwendungsfälle und Best Practices
- */
+// Zeigt den Einsatz des ArWalking Storage Systems
 class StorageExample(private val context: Context) {
     
     private val TAG = "StorageExample"
     private val storageManager = ArWalkingStorageManager(context)
     private val scope = CoroutineScope(Dispatchers.IO)
     
-    /**
-     * Beispiel 1: Bild speichern mit Progress-Updates
-     */
+    // Speichert ein Landmark-Bild und zeigt Fortschritt
     fun saveImageExample(bitmap: Bitmap, landmarkName: String) {
         scope.launch {
             val landmarkId = "landmark_${System.currentTimeMillis()}"
@@ -51,9 +46,7 @@ class StorageExample(private val context: Context) {
         }
     }
     
-    /**
-     * Beispiel 2: Paginierte Bildliste laden
-     */
+    // Lädt Landmark-Bilder paginiert
     fun loadImageListExample() {
         scope.launch {
             var page = 0
@@ -90,9 +83,7 @@ class StorageExample(private val context: Context) {
         }
     }
     
-    /**
-     * Beispiel 3: Suche nach Bildern
-     */
+    // Sucht gespeicherte Landmark-Bilder
     fun searchImagesExample(query: String) {
         scope.launch {
             val searchResults = storageManager.searchLandmarks(query)
@@ -113,9 +104,7 @@ class StorageExample(private val context: Context) {
         }
     }
     
-    /**
-     * Beispiel 4: Performance-Monitoring
-     */
+    // Misst Ladezeiten und fasst sie zusammen
     fun performanceMonitoringExample() {
         scope.launch {
             // Lade mehrere Bilder und messe Performance
@@ -155,9 +144,7 @@ class StorageExample(private val context: Context) {
         }
     }
     
-    /**
-     * Beispiel 5: Speicher-Bereinigung
-     */
+    // Startet eine Bereinigung alter Dateien
     fun cleanupExample() {
         scope.launch {
             Log.i(TAG, "Starte Speicher-Bereinigung...")
@@ -280,7 +267,7 @@ class StorageExample(private val context: Context) {
      * Führt alle Beispiele aus
      */
     fun runAllExamples() {
-        Log.i(TAG, "🚀 Starte ArWalking Storage Beispiele...")
+        Log.i(TAG, "Starte ArWalking Storage Beispiele...")
         
         performanceMonitoringExample()
         cleanupExample()

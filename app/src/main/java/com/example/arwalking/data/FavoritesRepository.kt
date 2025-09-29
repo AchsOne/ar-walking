@@ -15,7 +15,7 @@ object FavoritesRepository {
             destination = destination
         )
         
-        // Check if this exact route already exists
+        // Verhindert doppelte Routen
         val exists = _favorites.value.any { 
             it.startLocation == startLocation && it.destination == destination 
         }

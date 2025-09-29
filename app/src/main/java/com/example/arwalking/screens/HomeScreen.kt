@@ -105,13 +105,12 @@ fun HomeScreen(
     
 
     
-    // Funktion zur Prüfung, ob eine Route verfügbar ist
+    // Prüft, ob die Route unterstützt wird
     fun isRouteAvailable(start: String, destination: String): Boolean {
         val cleanStart = start.replace(" (coming soon)", "")
         val cleanDestination = destination.replace(" (coming soon)", "")
         
-        // Nur diese Route ist verfügbar (basierend auf der JSON-Datei)
-        // Die JSON-Route ist eine Rundroute von Prof. Ludwig's Büro
+        // Aktuell nur diese Route aktiv (laut route.json)
         return (cleanStart == "Büro Prof. Dr. Ludwig (PT 3.0.84C)" && cleanDestination == "Haupteingang")
     }
 
@@ -146,21 +145,21 @@ fun HomeScreen(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            // Validation: Check if both start and destination are selected
+            // Prüft, ob Start und Ziel gesetzt sind
             if (selectedStart == "Start suchen..." || selectedDestination == "Ziel suchen...") {
                 showErrorMessage = true
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                 return@rememberLauncherForActivityResult
             }
 
-            // Validation: Check if start and destination are different
+            // Verhindert gleiche Zielauswahl
             if (selectedStart == selectedDestination) {
                 showErrorMessage = true
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                 return@rememberLauncherForActivityResult
             }
 
-            // Validation: Check if route is available
+            // Prüft, ob die Route freigeschaltet ist
             if (!isRouteAvailable(selectedStart, selectedDestination)) {
                 showRouteNotAvailableMessage = true
                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -176,7 +175,7 @@ fun HomeScreen(
     }
 
     fun navigateWithPermission() {
-        // Validation: Check if both start and destination are selected
+        // Prüft, ob Start und Ziel gesetzt sind
         if (selectedStart == "Start suchen..." || selectedDestination == "Ziel suchen...") {
             showErrorMessage = true
             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
