@@ -30,20 +30,17 @@ import java.nio.charset.StandardCharsets
 import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
 import com.example.arwalking.BuildConfig
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.IOException
-import kotlin.math.*
+import kotlinx.coroutines.delay
+import org.opencv.android.OpenCVLoader
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var routeViewModel: RouteViewModel
-    private val landmarkFeatures = mutableMapOf<String, LandmarkSignature>()
 
     private val cameraPermissionLauncher: ActivityResultLauncher<String> =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -72,13 +69,44 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        Log.i("FeatureMatchTest", "=== SCHRITT 4: Feature-Matching ===")
 
-        // SCHRITT 4: Erstelle Feature-Signaturen und teste Matching
-        initializeFeatureMatching()
+        if (OpenCVLoader.initDebug()) {
+            Log.d("OpenCV", "OpenCV loaded successfully")
+        }
 
-        // Rest bleibt unverändert
+
+        if (OpenCVLoader.initLocal()) {
+            Log.d("OpenCV", "OpenCV loaded successfully")
+
+            // SCHRITT 1: Basis-Test
+            val opencvTest = OpenCvTest(this)
+            opencvTest.runAllTests()
+
+            // SCHRITT 2: Feature-Extraktion Test (NEU)
+            val featureTest = OpenCvFeatureTest(this)
+            val featuresPassed = featureTest.runAllTests()
+
+            if (featuresPassed) {
+                Toast.makeText(this, "✅ Feature-Extraktion funktioniert!", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this, "❌ Feature-Extraktion fehlgeschlagen", Toast.LENGTH_LONG).show()
+            }
+
+            //  SCHRITT 3: Feature-Matching Test
+            val matchingTest = OpenCvMatchingTest(this)
+            val matchingPassed = matchingTest.runAllTests()
+
+            if (matchingPassed) {
+                Toast.makeText(this, "✅ Feature-Matching erfolgreich!", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this, "❌ Feature-Matching fehlgeschlagen!", Toast.LENGTH_LONG).show()
+            }
+        }
+
+        // ViewModel erstellen
         routeViewModel = ViewModelProvider(this)[RouteViewModel::class.java]
+
+        // Storage initialisieren
         routeViewModel.initializeStorage(this)
 
         enableEdgeToEdge()
@@ -94,401 +122,118 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Route laden und Feature-Matching testen
         val navigationRoute = routeViewModel.loadNavigationRoute(this)
         if (navigationRoute != null) {
             routeViewModel.logNavigationRoute(navigationRoute)
             routeViewModel.enableStorageSystemImmediately(this)
 
-            if (BuildConfig.DEBUG) {
-                try {
-                    val systemValidator = SystemValidator(this)
-                    systemValidator.validateSystem(routeViewModel)
-                    systemValidator.simulateFeatureMatching(routeViewModel, "prof_ludwig_office")
-                } catch (e: Exception) {
-                    Log.w("FeatureMatchTest", "SystemValidator Fehler: ${e.message}")
-                }
-            }
+            // Feature-Matching initialisieren
+            Log.i("FeatureTest", "Initialisiere Feature-Matching...")
+            routeViewModel.initializeFeatureMapping(this)
+
         } else {
-            Log.e("FeatureMatchTest", "Fehler beim Laden der Route")
+            Log.e("FeatureTest", "Fehler beim Laden der Route")
         }
     }
 
-    private fun initializeFeatureMatching() {
-        CoroutineScope(Dispatchers.Main).launch {
+    /**
+     * Beobachtet Feature-Matching Ergebnisse
+     */
+    private fun observeFeatureMatching() {
+        lifecycleScope.launch {
+            // Beobachte ob Feature-Mapping aktiviert wurde
+            routeViewModel.isFeatureMappingEnabled.collect { isEnabled ->
+                Log.i("FeatureTest", "Feature-Mapping Status: ${if (isEnabled) "AKTIVIERT" else "DEAKTIVIERT"}")
+            }
+        }
+
+        lifecycleScope.launch {
+            // Beobachte Match-Ergebnisse
+            routeViewModel.currentMatches.collect { matches ->
+                if (matches.isNotEmpty()) {
+                    Log.i("FeatureTest", "=== MATCH ERGEBNISSE ===")
+                    matches.forEach { match ->
+                        Log.i("FeatureTest", "  ${match.landmark.name}: ${(match.confidence * 100).toInt()}% (${String.format("%.1f", match.distance)}m)")
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Führt automatisierten Test durch
+     */
+    private fun runAutomatedTest() {
+        lifecycleScope.launch {
             try {
-                Log.i("FeatureMatchTest", "Init Feature-Matching...")
+                Log.i("FeatureTest", "=== STARTE AUTOMATISIERTEN TEST ===")
 
-                val signatures = createLandmarkSignatures()
+                // Test 1: Lade ein Landmark-Bild als "Kamera-Frame"
+                val testLandmarkId = "PT-1-926"
+                Log.i("FeatureTest", "Test 1: Simuliere Frame mit $testLandmarkId")
 
-                if (signatures.isEmpty()) {
-                    Log.w("FeatureMatchTest", "Keine Signaturen")
+                val testBitmap = loadTestBitmap(testLandmarkId)
+                if (testBitmap == null) {
+                    Log.e("FeatureTest", "Konnte Test-Bitmap nicht laden")
                     return@launch
                 }
 
-                Log.i("FeatureMatchTest", "✅ ${signatures.size} Signaturen erstellt")
+                Log.i("FeatureTest", "Test-Bitmap geladen: ${testBitmap.width}x${testBitmap.height}")
 
-                testFeatureMatching(signatures)
+                // Setze Navigationsschritt der diesen Landmark erwartet
+                // (Angenommen der Landmark ist in Schritt 1)
+                routeViewModel.setCurrentNavigationStep(1)
 
-                simulateCameraFrameMatching(signatures)
+                delay(500)
 
-                Log.i("FeatureMatchTest", "🎉 Feature-Matching Tests abgeschlossen!")
-                Toast.makeText(this@MainActivity, "Feature-Matching bereit", Toast.LENGTH_SHORT).show()
+                // Teste Feature-Matching
+                Log.i("FeatureTest", "Führe Feature-Matching durch...")
+                routeViewModel.processFrameForFeatureMatching(testBitmap)
+
+                delay(2000)
+
+                // Test 2: Teste mit anderem Landmark (sollte Verwechslungswarnung geben)
+                Log.i("FeatureTest", "Test 2: Teste mit falschem Landmark")
+                val wrongBitmap = loadTestBitmap("PT-1-686")
+
+                if (wrongBitmap != null) {
+                    delay(1000)
+                    routeViewModel.processFrameForFeatureMatching(wrongBitmap)
+                }
+
+                delay(2000)
+
+                Log.i("FeatureTest", "=== TEST ABGESCHLOSSEN ===")
+                Toast.makeText(this@MainActivity, "Feature-Matching Test abgeschlossen", Toast.LENGTH_LONG).show()
 
             } catch (e: Exception) {
-                Log.e("FeatureMatchTest", "Fehler bei Feature-Matching Init: ${e.message}")
-                Toast.makeText(this@MainActivity, "Fehler: ${e.message}", Toast.LENGTH_LONG).show()
+                Log.e("FeatureTest", "Fehler beim automatisierten Test: ${e.message}")
             }
         }
     }
 
-    // Baut Signaturen aus allen Landmark-Bildern
-    private suspend fun createLandmarkSignatures(): List<LandmarkSignature> {
-        return withContext(Dispatchers.IO) {
-            val signatures = mutableListOf<LandmarkSignature>()
-
-            try {
-                val landmarkFiles = assets.list("landmark_images") ?: emptyArray()
-                val imageFiles = landmarkFiles.filter { filename ->
-                    filename.lowercase().endsWith(".jpg") || filename.lowercase().endsWith(".png")
-                }
-
-                Log.i("FeatureMatchTest", "Erstelle Signaturen für ${imageFiles.size} Bilder...")
-
-                for (filename in imageFiles) {
-                    val signature = createLandmarkSignature(filename)
-                    if (signature != null) {
-                        signatures.add(signature)
-                        landmarkFeatures[filename] = signature
-                        Log.d("FeatureMatchTest", "✅ Signatur erstellt: $filename")
-                    }
-                }
-
-            } catch (e: Exception) {
-                Log.e("FeatureMatchTest", "Fehler beim Erstellen der Signaturen: ${e.message}")
-            }
-
-            signatures
-        }
-    }
-
-    // Erstellt die Signatur für ein Landmark-Bild
-    private fun createLandmarkSignature(filename: String): LandmarkSignature? {
+    /**
+     * Lädt ein Landmark-Bild zum Testen
+     */
+    private fun loadTestBitmap(landmarkId: String): Bitmap? {
         return try {
-            val bitmap = loadBitmapFromAssets(filename) ?: return null
-
-            // Skaliere Bild für konsistente Verarbeitung
-            val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 64, 64, true)
-
-            // Erstelle verschiedene Feature-Typen
-            val colorHistogram = createColorHistogram(scaledBitmap)
-            val textureFeatures = createTextureFeatures(scaledBitmap)
-            val edgeFeatures = createEdgeFeatures(scaledBitmap)
-            val spatialFeatures = createSpatialFeatures(scaledBitmap)
-
-            LandmarkSignature(
-                filename = filename,
-                landmarkId = filename.substringBeforeLast('.'),
-                colorHistogram = colorHistogram,
-                textureFeatures = textureFeatures,
-                edgeFeatures = edgeFeatures,
-                spatialFeatures = spatialFeatures,
-                width = bitmap.width,
-                height = bitmap.height
-            )
-
-        } catch (e: Exception) {
-            Log.e("FeatureMatchTest", "Fehler bei Signatur-Erstellung für $filename: ${e.message}")
-            null
-        }
-    }
-
-    // Erstellt ein 4x4x4 Farb-Histogramm
-    private fun createColorHistogram(bitmap: Bitmap): IntArray {
-        val histogram = IntArray(64) // 4x4x4 für RGB
-        val pixels = IntArray(bitmap.width * bitmap.height)
-        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-
-        for (pixel in pixels) {
-            val r = ((pixel shr 16) and 0xFF) / 64
-            val g = ((pixel shr 8) and 0xFF) / 64
-            val b = (pixel and 0xFF) / 64
-
-            val index = r * 16 + g * 4 + b
-            if (index < histogram.size) {
-                histogram[index]++
-            }
-        }
-
-        return histogram
-    }
-
-    // Zieht simple Texturkennwerte
-    private fun createTextureFeatures(bitmap: Bitmap): FloatArray {
-        val features = FloatArray(16)
-        val pixels = IntArray(bitmap.width * bitmap.height)
-        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-
-        for (y in 1 until bitmap.height - 1) {
-            for (x in 1 until bitmap.width - 1) {
-                val center = getGrayValue(pixels[y * bitmap.width + x])
-
-                var pattern = 0
-                val neighbors = intArrayOf(
-                    getGrayValue(pixels[(y-1) * bitmap.width + x-1]), // Oben links
-                    getGrayValue(pixels[(y-1) * bitmap.width + x]),   // Oben
-                    getGrayValue(pixels[(y-1) * bitmap.width + x+1]), // Oben rechts
-                    getGrayValue(pixels[y * bitmap.width + x+1])      // Rechts
-                )
-
-                for (i in neighbors.indices) {
-                    if (neighbors[i] > center) {
-                        pattern = pattern or (1 shl i)
-                    }
-                }
-
-                if (pattern < features.size) {
-                    features[pattern]++
-                }
-            }
-        }
-
-        return features
-    }
-
-    /**
-     * Erstellt Kanten-Features (Gradientenrichtungen)
-     */
-    private fun createEdgeFeatures(bitmap: Bitmap): FloatArray {
-        val features = FloatArray(8) // 8 Richtungen
-        val pixels = IntArray(bitmap.width * bitmap.height)
-        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-
-        for (y in 1 until bitmap.height - 1) {
-            for (x in 1 until bitmap.width - 1) {
-                val gx = getGradientX(pixels, x, y, bitmap.width)
-                val gy = getGradientY(pixels, x, y, bitmap.width)
-
-                val magnitude = sqrt(gx * gx + gy * gy)
-                if (magnitude > 30) {
-                    val angle = atan2(gy, gx)
-                    val direction = ((angle + PI) / (PI / 4)).toInt() % 8
-                    features[direction] += magnitude.toFloat()
-                }
-            }
-        }
-
-        return features
-    }
-
-    /**
-     * Erstellt räumliche Features (Quadranten-Statistiken)
-     */
-    private fun createSpatialFeatures(bitmap: Bitmap): FloatArray {
-        val features = FloatArray(16) // 4x4 Quadranten
-        val pixels = IntArray(bitmap.width * bitmap.height)
-        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-
-        val qWidth = bitmap.width / 4
-        val qHeight = bitmap.height / 4
-
-        for (qy in 0 until 4) {
-            for (qx in 0 until 4) {
-                var brightness = 0f
-                var count = 0
-
-                for (y in qy * qHeight until (qy + 1) * qHeight) {
-                    for (x in qx * qWidth until (qx + 1) * qWidth) {
-                        if (y < bitmap.height && x < bitmap.width) {
-                            brightness += getGrayValue(pixels[y * bitmap.width + x])
-                            count++
-                        }
-                    }
-                }
-
-                features[qy * 4 + qx] = if (count > 0) brightness / count else 0f
-            }
-        }
-
-        return features
-    }
-
-    /**
-     * Testet Feature-Matching zwischen Landmarks
-     */
-    private suspend fun testFeatureMatching(signatures: List<LandmarkSignature>) {
-        withContext(Dispatchers.Default) {
-            Log.i("FeatureMatchTest", "=== Feature-Matching Tests ===")
-
-            // Teste jede Signatur gegen alle anderen
-            for (i in signatures.indices) {
-                for (j in i + 1 until signatures.size) {
-                    val sig1 = signatures[i]
-                    val sig2 = signatures[j]
-
-                    val similarity = calculateSimilarity(sig1, sig2)
-
-                    Log.d("FeatureMatchTest", "Similarity: ${sig1.landmarkId} vs ${sig2.landmarkId} = ${(similarity * 100).toInt()}%")
-                }
-            }
-        }
-    }
-
-    /**
-     * Simuliert Kamera-Frame Matching
-     */
-    private suspend fun simulateCameraFrameMatching(signatures: List<LandmarkSignature>) {
-        withContext(Dispatchers.Default) {
-            Log.i("FeatureMatchTest", "=== Simuliere Kamera-Frame Matching ===")
-
-            // Simuliere: verwende PT-1-926 als "Kamera-Frame"
-            val testFrame = signatures.find { it.landmarkId == "PT-1-926" }
-            if (testFrame == null) {
-                Log.w("FeatureMatchTest", "PT-1-926 nicht gefunden für Simulation")
-                return@withContext
-            }
-
-            Log.i("FeatureMatchTest", "Simuliere Frame-Matching für: ${testFrame.landmarkId}")
-
-            val matches = mutableListOf<MatchResult>()
-
-            for (signature in signatures) {
-                if (signature.landmarkId != testFrame.landmarkId) { // Nicht gegen sich selbst matchen
-                    val similarity = calculateSimilarity(testFrame, signature)
-
-                    if (similarity > 0.3f) { // Nur Matches über 30%
-                        matches.add(
-                            MatchResult(
-                                landmarkId = signature.landmarkId,
-                                filename = signature.filename,
-                                similarity = similarity,
-                                matchCount = (similarity * 100).toInt(),
-                                distance = (1.0f - similarity) * 20.0f + 2.0f // 2-22 Meter
-                            )
-                        )
-                    }
-                }
-            }
-
-            // Sortiere nach Similarity
-            matches.sortByDescending { it.similarity }
-
-            Log.i("FeatureMatchTest", "🎯 Gefunden: ${matches.size} Matches für ${testFrame.landmarkId}")
-
-            matches.take(3).forEach { match ->
-                Log.i("FeatureMatchTest", "  📍 ${match.landmarkId}: ${(match.similarity * 100).toInt()}% (${String.format("%.1f", match.distance)}m)")
-            }
-        }
-    }
-
-    /**
-     * Berechnet Ähnlichkeit zwischen zwei Signaturen
-     */
-    private fun calculateSimilarity(sig1: LandmarkSignature, sig2: LandmarkSignature): Float {
-        // Farb-Histogramm Similarity
-        val colorSim = calculateHistogramSimilarity(sig1.colorHistogram, sig2.colorHistogram)
-
-        // Textur-Similarity
-        val textureSim = calculateArraySimilarity(sig1.textureFeatures, sig2.textureFeatures)
-
-        // Kanten-Similarity
-        val edgeSim = calculateArraySimilarity(sig1.edgeFeatures, sig2.edgeFeatures)
-
-        // Räumliche Similarity
-        val spatialSim = calculateArraySimilarity(sig1.spatialFeatures, sig2.spatialFeatures)
-
-        // Gewichtete Kombination
-        return (colorSim * 0.3f + textureSim * 0.25f + edgeSim * 0.25f + spatialSim * 0.2f)
-    }
-
-    // Hilfsfunktionen
-    private fun getGrayValue(pixel: Int): Int {
-        val r = (pixel shr 16) and 0xFF
-        val g = (pixel shr 8) and 0xFF
-        val b = pixel and 0xFF
-        return (0.299 * r + 0.587 * g + 0.114 * b).toInt()
-    }
-
-    private fun getGradientX(pixels: IntArray, x: Int, y: Int, width: Int): Float {
-        val left = getGrayValue(pixels[y * width + x - 1])
-        val right = getGrayValue(pixels[y * width + x + 1])
-        return (right - left).toFloat()
-    }
-
-    private fun getGradientY(pixels: IntArray, x: Int, y: Int, width: Int): Float {
-        val top = getGrayValue(pixels[(y - 1) * width + x])
-        val bottom = getGrayValue(pixels[(y + 1) * width + x])
-        return (bottom - top).toFloat()
-    }
-
-    private fun calculateHistogramSimilarity(hist1: IntArray, hist2: IntArray): Float {
-        var intersection = 0
-        var union = 0
-
-        for (i in hist1.indices) {
-            intersection += minOf(hist1[i], hist2[i])
-            union += maxOf(hist1[i], hist2[i])
-        }
-
-        return if (union > 0) intersection.toFloat() / union else 0f
-    }
-
-    private fun calculateArraySimilarity(arr1: FloatArray, arr2: FloatArray): Float {
-        var dotProduct = 0f
-        var norm1 = 0f
-        var norm2 = 0f
-
-        for (i in arr1.indices) {
-            dotProduct += arr1[i] * arr2[i]
-            norm1 += arr1[i] * arr1[i]
-            norm2 += arr2[i] * arr2[i]
-        }
-
-        return if (norm1 > 0 && norm2 > 0) {
-            dotProduct / (sqrt(norm1) * sqrt(norm2))
-        } else 0f
-    }
-
-    private fun loadBitmapFromAssets(filename: String): Bitmap? {
-        return try {
+            val filename = "$landmarkId.jpg"
             val inputStream = assets.open("landmark_images/$filename")
             val bitmap = BitmapFactory.decodeStream(inputStream)
             inputStream.close()
             bitmap
-        } catch (e: IOException) {
+        } catch (e: Exception) {
+            Log.e("FeatureTest", "Fehler beim Laden von $landmarkId: ${e.message}")
             null
         }
     }
 
     override fun onResume() {
         super.onResume()
-        Log.d("FeatureMatchTest", "App resumed - Feature-Matching bereit")
+        Log.d("FeatureTest", "App resumed")
     }
 }
-
-/**
- * Erweiterte Landmark-Signatur mit verschiedenen Feature-Typen
- */
-data class LandmarkSignature(
-    val filename: String,
-    val landmarkId: String,
-    val colorHistogram: IntArray,
-    val textureFeatures: FloatArray,
-    val edgeFeatures: FloatArray,
-    val spatialFeatures: FloatArray,
-    val width: Int,
-    val height: Int
-)
-
-/**
- * Match-Ergebnis für Feature-Matching
- */
-data class MatchResult(
-    val landmarkId: String,
-    val filename: String,
-    val similarity: Float,
-    val matchCount: Int,
-    val distance: Float
-)
 
 @Composable
 fun ARWalkingApp() {

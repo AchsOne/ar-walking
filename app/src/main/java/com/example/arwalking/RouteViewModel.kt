@@ -15,69 +15,300 @@ import java.io.ByteArrayOutputStream
 import com.example.arwalking.storage.ArWalkingStorageManager
 import com.example.arwalking.storage.SaveResult
 import com.example.arwalking.data.RouteRepository
+import com.example.arwalking.vision.ContextualFeatureMatcher
+import com.example.arwalking.vision.MatchResult
 
 /**
- * ViewModel für Route-Management und Feature-Mapping
- * Verwendet das neue Storage-System - kein Trainingsmodus erforderlich!
+ * RouteViewModel mit integriertem Feature-Matching
  */
 class RouteViewModel : ViewModel() {
-    
-    private val TAG = "RouteViewModel"
-    
-    // Neues Storage-System (ersetzt LocalFeatureMapManager)
-    private var storageManager: ArWalkingStorageManager? = null
-    
-    // Route Repository für JSON-Daten
-    private var routeRepository: RouteRepository? = null
-    
 
-    
-    // State für geladene Route aus JSON
+    private val TAG = "RouteViewModel"
+
+    // Storage & Repository
+    private var storageManager: ArWalkingStorageManager? = null
+    private var routeRepository: RouteRepository? = null
+
+    // Feature-Matching
+    private var featureMatcher: ContextualFeatureMatcher? = null
+    private var isFeatureMatchingReady = false
+
+    // Route States
     private val _currentRoute = MutableStateFlow<RouteData?>(null)
     val currentRoute: StateFlow<RouteData?> = _currentRoute.asStateFlow()
-    
-    // State für Feature-Navigation
-    private val _featureNavigationRoute = MutableStateFlow<FeatureNavigationRoute?>(null)
-    val featureNavigationRoute: StateFlow<FeatureNavigationRoute?> = _featureNavigationRoute.asStateFlow()
-    
-    private val _currentMatches = MutableStateFlow<List<FeatureMatchResult>>(emptyList())
-    val currentMatches: StateFlow<List<FeatureMatchResult>> = _currentMatches.asStateFlow()
-    
-    private val _isFeatureMappingEnabled = MutableStateFlow(false)
-    val isFeatureMappingEnabled: StateFlow<Boolean> = _isFeatureMappingEnabled.asStateFlow()
-    
-    // State für aktuellen Navigationsschritt
+
     private val _currentNavigationStep = MutableStateFlow(1)
     val currentNavigationStep: StateFlow<Int> = _currentNavigationStep.asStateFlow()
 
+    // Feature-Mapping States
+    private val _currentMatches = MutableStateFlow<List<FeatureMatchResult>>(emptyList())
+    val currentMatches: StateFlow<List<FeatureMatchResult>> = _currentMatches.asStateFlow()
+
+    private val _isFeatureMappingEnabled = MutableStateFlow(false)
+    val isFeatureMappingEnabled: StateFlow<Boolean> = _isFeatureMappingEnabled.asStateFlow()
+
+    // Match-Historie für sequentielle Validierung
+    private val matchHistory = mutableListOf<String>()
+    private val maxHistorySize = 5
+
     /**
-     * Lädt die Route aus der JSON-Datei
+     * Initialisiert Feature-Mapping System
      */
+    fun initializeFeatureMapping(context: Context) {
+        viewModelScope.launch {
+            try {
+                Log.i(TAG, "Initialisiere Feature-Mapping System...")
+
+                // Erstelle Matcher
+                featureMatcher = ContextualFeatureMatcher(context)
+
+                // Lade alle Landmark-Signaturen
+                val success = featureMatcher!!.initialize()
+
+                if (success) {
+                    isFeatureMatchingReady = true
+                    _isFeatureMappingEnabled.value = true
+                    Log.i(TAG, "Feature-Mapping bereit!")
+                } else {
+                    Log.w(TAG, "Feature-Mapping konnte nicht initialisiert werden")
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Fehler bei Feature-Mapping Init: ${e.message}")
+                _isFeatureMappingEnabled.value = false
+            }
+        }
+    }
+
+    /**
+     * Verarbeitet Kamera-Frame für Feature-Matching
+     * DIES IST DIE HAUPTMETHODE FÜR NAVIGATION
+     */
+    fun processFrameForFeatureMatching(cameraBitmap: Bitmap) {
+        viewModelScope.launch {
+            try {
+                if (!isFeatureMatchingReady) {
+                    Log.w(TAG, "Feature-Matching nicht bereit")
+                    return@launch
+                }
+
+                // Hole aktuellen Navigationsschritt
+                val currentStep = getCurrentStep()
+                if (currentStep == null) {
+                    Log.w(TAG, "Kein aktueller Navigationsschritt")
+                    return@launch
+                }
+
+                // Finde erwarteten Landmark aus dem Schritt
+                val expectedLandmark = getExpectedLandmark(currentStep)
+                if (expectedLandmark == null) {
+                    Log.w(TAG, "Kein erwarteter Landmark im Schritt")
+                    return@launch
+                }
+
+                Log.i(TAG, "=== Frame-Processing ===")
+                Log.i(TAG, "Schritt ${currentStep.stepNumber}: ${currentStep.instruction}")
+                Log.i(TAG, "Erwarteter Landmark: $expectedLandmark")
+
+                // Finde mögliche alternative Landmarks (z.B. Nachbar-Landmarks)
+                val alternatives = getPossibleAlternatives(currentStep)
+
+                // Führe kontextuelles Matching durch
+                val matchResult = featureMatcher!!.matchExpectedLandmark(
+                    cameraFrame = cameraBitmap,
+                    expectedLandmarkId = expectedLandmark,
+                    allowedAlternatives = alternatives
+                )
+
+                // Verarbeite Match-Ergebnis
+                handleMatchResult(matchResult, expectedLandmark)
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Fehler beim Frame-Processing: ${e.message}")
+                _currentMatches.value = emptyList()
+            }
+        }
+    }
+
+    /**
+     * Verarbeitet Match-Ergebnis und aktualisiert UI
+     */
+    private fun handleMatchResult(matchResult: MatchResult, expectedLandmark: String) {
+        when (matchResult) {
+            is MatchResult.StrongMatch -> {
+                Log.i(TAG, "STARKER MATCH: ${matchResult.landmarkId} (${(matchResult.confidence * 100).toInt()}%)")
+
+                // Füge zu Historie hinzu
+                addToMatchHistory(matchResult.landmarkId)
+
+                // Erstelle FeatureMatchResult für UI
+                val result = FeatureMatchResult(
+                    landmark = createLandmark(matchResult.landmarkId, matchResult.confidence),
+                    matchCount = (matchResult.confidence * 100).toInt(),
+                    confidence = matchResult.confidence,
+                    distance = 2.0f // Nahbereich
+                )
+
+                _currentMatches.value = listOf(result)
+
+                // Prüfe ob User länger am gleichen Ort steht (für Auto-Advance)
+                checkForStablePosition(matchResult.landmarkId)
+            }
+
+            is MatchResult.WeakMatch -> {
+                Log.w(TAG, "SCHWACHER MATCH: ${matchResult.landmarkId} (${(matchResult.confidence * 100).toInt()}%) - ${matchResult.warning}")
+
+                val result = FeatureMatchResult(
+                    landmark = createLandmark(matchResult.landmarkId, matchResult.confidence),
+                    matchCount = (matchResult.confidence * 100).toInt(),
+                    confidence = matchResult.confidence,
+                    distance = 5.0f // Mittelbereich
+                )
+
+                _currentMatches.value = listOf(result)
+
+                // Nicht zur Historie hinzufügen - zu unsicher
+            }
+
+            is MatchResult.Ambiguous -> {
+                Log.e(TAG, "MEHRDEUTIG: Erwartete $expectedLandmark aber ${matchResult.confusingLandmark} passt besser!")
+                Log.e(TAG, "Erwartet: ${(matchResult.expectedSimilarity * 100).toInt()}% vs Verwechslung: ${(matchResult.confusingSimilarity * 100).toInt()}%")
+
+                // Zeige beide Kandidaten
+                val results = listOf(
+                    FeatureMatchResult(
+                        landmark = createLandmark(matchResult.confusingLandmark, matchResult.confusingSimilarity),
+                        matchCount = (matchResult.confusingSimilarity * 100).toInt(),
+                        confidence = matchResult.confusingSimilarity,
+                        distance = 3.0f
+                    ),
+                    FeatureMatchResult(
+                        landmark = createLandmark(expectedLandmark, matchResult.expectedSimilarity),
+                        matchCount = (matchResult.expectedSimilarity * 100).toInt(),
+                        confidence = matchResult.expectedSimilarity,
+                        distance = 5.0f
+                    )
+                )
+
+                _currentMatches.value = results
+
+                // Warnung: User ist wahrscheinlich am falschen Ort
+                Log.w(TAG, "USER WAHRSCHEINLICH AM FALSCHEN ORT!")
+            }
+
+            is MatchResult.NoMatch -> {
+                Log.w(TAG, "KEIN MATCH: ${matchResult.reason}")
+                _currentMatches.value = emptyList()
+            }
+        }
+    }
+
+    /**
+     * Findet erwarteten Landmark aus Navigationsschritt
+     */
+    private fun getExpectedLandmark(step: NavigationStep): String? {
+        // Prüfe ob Schritt Landmarks hat
+        if (step.landmarks.isEmpty()) {
+            return null
+        }
+
+        // Extrahiere ID vom ersten Landmark
+        return step.landmarks.first().id  // Änderung: .id hinzugefügt
+    }
+
+    /**
+     * Findet mögliche alternative Landmarks (z.B. vom nächsten Schritt)
+     */
+    private fun getPossibleAlternatives(currentStep: NavigationStep): List<String> {
+        val alternatives = mutableListOf<String>()
+
+        try {
+            val steps = getCurrentNavigationSteps()
+            val currentIndex = steps.indexOf(currentStep)
+
+            // Füge Landmarks vom nächsten Schritt hinzu (falls User schon weiter ist)
+            if (currentIndex >= 0 && currentIndex < steps.size - 1) {
+                val nextStep = steps[currentIndex + 1]
+                alternatives.addAll(nextStep.landmarks.map { it.id })  // Änderung: .map { it.id }
+            }
+
+            // Füge Landmarks vom vorherigen Schritt hinzu (falls User zurück ist)
+            if (currentIndex > 0) {
+                val prevStep = steps[currentIndex - 1]
+                alternatives.addAll(prevStep.landmarks.map { it.id })  // Änderung: .map { it.id }
+            }
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler beim Finden der Alternativen: ${e.message}")
+        }
+
+        return alternatives.distinct()
+    }
+
+    /**
+     * Fügt Match zur Historie hinzu
+     */
+    private fun addToMatchHistory(landmarkId: String) {
+        matchHistory.add(landmarkId)
+
+        if (matchHistory.size > maxHistorySize) {
+            matchHistory.removeAt(0)
+        }
+
+        Log.d(TAG, "Match-Historie: ${matchHistory.takeLast(3).joinToString()}")
+    }
+
+    /**
+     * Prüft ob User stabil am gleichen Ort steht
+     */
+    private fun checkForStablePosition(landmarkId: String) {
+        val recentMatches = matchHistory.takeLast(3)
+
+        if (recentMatches.size >= 3 && recentMatches.all { it == landmarkId }) {
+            Log.i(TAG, "STABILE POSITION: User steht seit ${recentMatches.size} Frames bei $landmarkId")
+
+            // Optional: Auto-advance zum nächsten Schritt
+            // nextNavigationStep()
+        }
+    }
+
+    /**
+     * Erstellt FeatureLandmark für UI
+     */
+    private fun createLandmark(landmarkId: String, confidence: Float): FeatureLandmark {
+        return FeatureLandmark(
+            id = landmarkId,
+            name = landmarkId,
+            description = "Landmark $landmarkId",
+            position = Position(0.0, 0.0, 0.0),
+            imageUrl = "",
+            confidence = confidence
+        )
+    }
+
+    // =====================================
+    // BESTEHENDE METHODEN (unverändert)
+    // =====================================
+
     fun loadNavigationRoute(context: Context): NavigationRoute? {
         return try {
             Log.i(TAG, "Lade Route aus JSON-Datei...")
-            
-            // Initialisiere RouteRepository falls noch nicht geschehen
+
             if (routeRepository == null) {
                 routeRepository = RouteRepository(context)
             }
-            
-            // Lade Route aus JSON-Datei
+
             viewModelScope.launch {
                 val routeData = routeRepository?.getRouteFromAssets("route.json")
                 _currentRoute.value = routeData
-                
+
                 if (routeData != null) {
                     Log.i(TAG, "Route erfolgreich aus JSON geladen")
-                    // Konvertiere RouteData zu NavigationRoute für Feature-Mapping
-                    val navigationRoute = convertToNavigationRoute(routeData)
-                    Log.i(TAG, "Route konvertiert: ${navigationRoute.steps.size} Schritte")
                 } else {
                     Log.w(TAG, "Keine Route in JSON-Datei gefunden")
                 }
             }
-            
-            // Erstelle eine Standard-Route für sofortige Rückgabe
+
             NavigationRoute(
                 id = "default_route",
                 name = "Standard Route",
@@ -85,43 +316,74 @@ class RouteViewModel : ViewModel() {
                 totalLength = 0.0,
                 steps = emptyList()
             )
-            
+
         } catch (e: Exception) {
             Log.e(TAG, "Fehler beim Laden der Route: ${e.message}")
             null
         }
     }
-    
-    /**
-     * Loggt Informationen über die geladene NavigationRoute
-     */
-    fun logNavigationRoute(navigationRoute: NavigationRoute) {
-        Log.i(TAG, "=== Navigation Route Details ===")
-        Log.i(TAG, "Route ID: ${navigationRoute.id}")
-        Log.i(TAG, "Route Name: ${navigationRoute.name}")
-        Log.i(TAG, "Route Description: ${navigationRoute.description}")
-        Log.i(TAG, "Anzahl Schritte: ${navigationRoute.steps.size}")
-        
-        navigationRoute.steps.forEachIndexed { index, step ->
-            Log.d(TAG, "Schritt ${index + 1}: ${step.instruction}")
-            Log.d(TAG, "  - Building: ${step.building}")
-            Log.d(TAG, "  - Floor: ${step.floor}")
-            Log.d(TAG, "  - Distance: ${step.distance}m")
-            Log.d(TAG, "  - Estimated Time: ${step.estimatedTime}s")
-            Log.d(TAG, "  - Landmarks: ${step.landmarks.size}")
+
+    fun initializeStorage(context: Context) {
+        viewModelScope.launch {
+            try {
+                Log.i(TAG, "Initialisiere Storage-System...")
+                storageManager = ArWalkingStorageManager(context)
+
+                val availableLandmarks = storageManager!!.getAvailableProjectLandmarks()
+                Log.i(TAG, "Verfügbare Landmark-Bilder: ${availableLandmarks.size}")
+
+                _isFeatureMappingEnabled.value = true
+
+                val status = storageManager!!.getStorageStatus()
+                Log.i(TAG, "Storage-Status: ${status.getHealthStatus()}")
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Fehler bei Storage-Initialisierung: ${e.message}")
+                _isFeatureMappingEnabled.value = false
+            }
         }
-        
-        Log.i(TAG, "=== Ende Route Details ===")
     }
-    
-    /**
-     * Konvertiert RouteData zu NavigationRoute
-     */
+
+    fun enableStorageSystemImmediately(context: Context) {
+        viewModelScope.launch {
+            try {
+                if (storageManager == null) {
+                    initializeStorage(context)
+                    return@launch
+                }
+
+                _isFeatureMappingEnabled.value = true
+                Log.i(TAG, "Storage-System sofort aktiviert")
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Fehler beim sofortigen Aktivieren: ${e.message}")
+            }
+        }
+    }
+
+    fun setCurrentNavigationStep(step: Int) {
+        _currentNavigationStep.value = step
+        Log.d(TAG, "Navigationsschritt gesetzt: $step")
+    }
+
+    fun nextNavigationStep() {
+        val currentStep = _currentNavigationStep.value
+        _currentNavigationStep.value = currentStep + 1
+        Log.d(TAG, "Nächster Navigationsschritt: ${currentStep + 1}")
+    }
+
+    fun previousNavigationStep() {
+        val currentStep = _currentNavigationStep.value
+        if (currentStep > 1) {
+            _currentNavigationStep.value = currentStep - 1
+            Log.d(TAG, "Vorheriger Navigationsschritt: ${currentStep - 1}")
+        }
+    }
+
     private fun convertToNavigationRoute(routeData: RouteData): NavigationRoute {
         val steps = mutableListOf<NavigationStep>()
         var stepNumber = 1
-        
-        // Durchlaufe alle PathItems und RouteParts
+
         routeData.route.path.forEach { pathItem ->
             pathItem.routeParts.forEach { routePart ->
                 steps.add(
@@ -129,7 +391,7 @@ class RouteViewModel : ViewModel() {
                         stepNumber = stepNumber++,
                         instruction = routePart.instructionDe,
                         building = pathItem.xmlName,
-                        floor = 0, // TODO: Extract from levelInfo if available
+                        floor = 0,
                         landmarks = routePart.landmarks,
                         distance = routePart.distance ?: 0.0,
                         estimatedTime = routePart.duration ?: 60
@@ -137,7 +399,7 @@ class RouteViewModel : ViewModel() {
                 )
             }
         }
-        
+
         return NavigationRoute(
             id = "route_${System.currentTimeMillis()}",
             name = "Navigation Route",
@@ -147,511 +409,7 @@ class RouteViewModel : ViewModel() {
             estimatedTime = steps.sumOf { it.estimatedTime }
         )
     }
-    
 
-    
-    /**
-     * Initialisiert das neue Storage-System (ersetzt Feature-Mapping)
-     */
-    fun initializeStorage(context: Context) {
-        viewModelScope.launch {
-            try {
-                Log.i(TAG, "Initialisiere neues Storage-System...")
-                
-                // Neues Storage-System initialisieren
-                storageManager = ArWalkingStorageManager(context)
-                
-                // Prüfe verfügbare Bilder im Projektverzeichnis
-                val availableLandmarks = storageManager!!.getAvailableProjectLandmarks()
-                Log.i(TAG, "Verfügbare Landmark-Bilder: ${availableLandmarks.size}")
-                
-                availableLandmarks.take(5).forEach { landmark ->
-                    Log.d(TAG, "- ${landmark.id} (${landmark.filename})")
-                }
-                
-                // Storage-System ist immer verfügbar (auch ohne Bilder)
-                _isFeatureMappingEnabled.value = true
-                
-                Log.i(TAG, "Storage-System erfolgreich initialisiert")
-                
-                // Logge Storage-Status
-                val status = storageManager!!.getStorageStatus()
-                Log.i(TAG, "Storage-Status: ${status.getHealthStatus()}")
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "Fehler bei Storage-Initialisierung: ${e.message}")
-                _isFeatureMappingEnabled.value = false
-            }
-        }
-    }
-    
-    /**
-     * Lädt verfügbare Landmarks aus dem Projektverzeichnis
-     */
-    fun loadAvailableLandmarks(context: Context) {
-        viewModelScope.launch {
-            try {
-                Log.i(TAG, "Lade verfügbare Landmarks aus Projektverzeichnis...")
-                
-                if (storageManager == null) {
-                    initializeStorage(context)
-                }
-                
-                val landmarks = storageManager?.getAvailableProjectLandmarks() ?: emptyList()
-                
-                if (landmarks.isNotEmpty()) {
-                    Log.i(TAG, "Verfügbare Landmarks: ${landmarks.size}")
-                    landmarks.forEach { landmark ->
-                        Log.d(TAG, "- ${landmark.id} (${landmark.filename})")
-                    }
-                } else {
-                    Log.w(TAG, "Keine Landmark-Bilder im Projektverzeichnis gefunden")
-                    Log.i(TAG, "Tipp: Kopiere Bilder in /Users/florian/Documents/GitHub/ar-walking/landmark_images/")
-                }
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "Fehler beim Laden der Landmarks: ${e.message}")
-            }
-        }
-    }
-    
-    /**
-     * Lädt ein Landmark-Bild für die Anzeige
-     */
-    suspend fun loadLandmarkImage(landmarkId: String): Bitmap? {
-        return try {
-            if (storageManager == null) {
-                Log.w(TAG, "Storage-Manager nicht initialisiert")
-                return null
-            }
-            
-            val image = storageManager!!.loadFullImage(landmarkId)
-            if (image != null) {
-                Log.d(TAG, "Landmark-Bild geladen: $landmarkId (${image.width}x${image.height})")
-            } else {
-                Log.w(TAG, "Landmark-Bild nicht gefunden: $landmarkId")
-            }
-            image
-        } catch (e: Exception) {
-            Log.e(TAG, "Fehler beim Laden des Landmark-Bildes $landmarkId: ${e.message}")
-            null
-        }
-    }
-    
-    /**
-     * Lädt ein Landmark-Thumbnail für die Anzeige
-     */
-    suspend fun loadLandmarkThumbnail(landmarkId: String): Bitmap? {
-        return try {
-            if (storageManager == null) {
-                Log.w(TAG, "Storage-Manager nicht initialisiert")
-                return null
-            }
-            
-            val thumbnail = storageManager!!.loadThumbnail(landmarkId)
-            if (thumbnail != null) {
-                Log.d(TAG, "Landmark-Thumbnail geladen: $landmarkId (${thumbnail.width}x${thumbnail.height})")
-            } else {
-                Log.w(TAG, "Landmark-Thumbnail nicht gefunden: $landmarkId")
-            }
-            thumbnail
-        } catch (e: Exception) {
-            Log.e(TAG, "Fehler beim Laden des Landmark-Thumbnails $landmarkId: ${e.message}")
-            null
-        }
-    }
-    
-    /**
-     * Fügt einen neuen Landmark hinzu (nur lokale Speicherung)
-     */
-    suspend fun addLandmark(
-        context: Context,
-        bitmap: Bitmap,
-        landmarkId: String,
-        landmarkName: String,
-        description: String,
-        onProgress: (String) -> Unit = {}
-    ): Boolean {
-        return try {
-            Log.i(TAG, "Füge neuen Landmark hinzu: $landmarkId")
-            
-            if (storageManager != null) {
-                val saveResult = storageManager!!.saveImage(
-                    bitmap = bitmap,
-                    landmarkId = landmarkId,
-                    landmarkName = landmarkName,
-                    description = description,
-                    category = "Training"
-                )
-                
-                when (saveResult) {
-                    is SaveResult.Success -> {
-                        Log.i(TAG, "Landmark erfolgreich lokal gespeichert: $landmarkId")
-                        true
-                    }
-                    is SaveResult.Error -> {
-                        Log.e(TAG, "Fehler beim lokalen Speichern: ${saveResult.message}")
-                        false
-                    }
-                }
-            } else {
-                Log.w(TAG, "Storage-Manager nicht verfügbar")
-                false
-            }
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Fehler beim Hinzufügen des Landmarks: ${e.message}")
-            false
-        }
-    }
-    
-
-    
-    /**
-     * Aktiviert Storage-System sofort
-     */
-    fun enableStorageSystemImmediately(context: Context) {
-        viewModelScope.launch {
-            try {
-                Log.i(TAG, "Aktiviere Storage-System sofort...")
-                
-                // Stelle sicher, dass Storage-System initialisiert ist
-                if (storageManager == null) {
-                    Log.w(TAG, "Storage-Manager nicht initialisiert - initialisiere jetzt...")
-                    initializeStorage(context)
-                    return@launch
-                }
-                
-                _isFeatureMappingEnabled.value = true
-                Log.i(TAG, "Storage-System sofort aktiviert")
-                
-                // Lade verfügbare Landmarks
-                loadAvailableLandmarks(context)
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "Fehler beim sofortigen Aktivieren des Feature Mappings: ${e.message}")
-            }
-        }
-    }
-    
-    /**
-     * Prüft ob die App im Emulator läuft
-     */
-    private fun isEmulatorDevice(): Boolean {
-        return (android.os.Build.FINGERPRINT.startsWith("generic") ||
-                android.os.Build.FINGERPRINT.startsWith("unknown") ||
-                android.os.Build.MODEL.contains("google_sdk") ||
-                android.os.Build.MODEL.contains("Emulator") ||
-                android.os.Build.MODEL.contains("Android SDK built for x86") ||
-                android.os.Build.MANUFACTURER.contains("Genymotion") ||
-                android.os.Build.BRAND.startsWith("generic") && android.os.Build.DEVICE.startsWith("generic") ||
-                "google_sdk" == android.os.Build.PRODUCT)
-    }
-    
-
-    
-    /**
-     * Lädt ein Thumbnail (schnell) - verwendet neues Storage-System
-     */
-    suspend fun loadThumbnail(landmarkId: String): android.graphics.Bitmap? {
-        return storageManager?.loadThumbnail(landmarkId)
-    }
-    
-    /**
-     * Lädt ein Vollbild (mit Cache) - verwendet neues Storage-System
-     */
-    suspend fun loadFullImage(landmarkId: String): android.graphics.Bitmap? {
-        return storageManager?.loadFullImage(landmarkId)
-    }
-    
-    /**
-     * Löscht ein Landmark - verwendet neues Storage-System
-     */
-    suspend fun deleteLandmark(landmarkId: String): Boolean {
-        return storageManager?.deleteLandmark(landmarkId) ?: false
-    }
-    
-    /**
-     * Gibt Performance-Informationen zurück
-     */
-    fun getPerformanceInfo(): String {
-        return if (storageManager != null) {
-            val status = runBlocking { storageManager!!.getStorageStatus() }
-            "Storage-Status: ${status.getHealthStatus()}, Bilder: ${status.totalImages}, Cache-Hit-Rate: ${String.format("%.1f", status.cacheHitRate)}%"
-        } else {
-            "Storage-System nicht verfügbar"
-        }
-    }
-    
-    /**
-     * Bereinigt Cache und defekte Dateien
-     */
-    suspend fun cleanup(): com.example.arwalking.storage.CleanupSummary? {
-        return storageManager?.cleanup()
-    }
-    
-    /**
-     * Lädt verfügbare Landmarks aus dem Storage-System
-     */
-    private fun loadAvailableStorageData() {
-        viewModelScope.launch {
-            try {
-                Log.i(TAG, "Lade verfügbare Storage-Daten...")
-                
-                if (storageManager != null) {
-                    val landmarks = storageManager!!.getAvailableProjectLandmarks()
-                    Log.i(TAG, "Verfügbare Landmarks: ${landmarks.size}")
-                    
-                    val status = storageManager!!.getStorageStatus()
-                    Log.i(TAG, "Storage-Status: ${status.getHealthStatus()}")
-                } else {
-                    Log.w(TAG, "Storage-Manager nicht verfügbar")
-                }
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "Fehler beim Laden der Feature Maps: ${e.message}")
-            }
-        }
-    }
-    
-    /**
-     * Setzt den aktuellen Navigationsschritt
-     */
-    fun setCurrentNavigationStep(step: Int) {
-        _currentNavigationStep.value = step
-        Log.d(TAG, "Navigationsschritt gesetzt: $step")
-    }
-    
-    /**
-     * Geht zum nächsten Navigationsschritt
-     */
-    fun nextNavigationStep() {
-        val currentStep = _currentNavigationStep.value
-        _currentNavigationStep.value = currentStep + 1
-        Log.d(TAG, "Nächster Navigationsschritt: ${currentStep + 1}")
-    }
-    
-    /**
-     * Geht zum vorherigen Navigationsschritt
-     */
-    fun previousNavigationStep() {
-        val currentStep = _currentNavigationStep.value
-        if (currentStep > 1) {
-            _currentNavigationStep.value = currentStep - 1
-            Log.d(TAG, "Vorheriger Navigationsschritt: ${currentStep - 1}")
-        }
-    }
-    
-    /**
-     * Konvertiert Bitmap zu Base64 String
-     */
-    private fun bitmapToBase64(bitmap: Bitmap): String {
-        val byteArrayOutputStream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 85, byteArrayOutputStream)
-        val byteArray = byteArrayOutputStream.toByteArray()
-        return android.util.Base64.encodeToString(byteArray, android.util.Base64.DEFAULT)
-    }
-    
-    /**
-     * Erstellt einen neuen Landmark - verwendet neues Storage-System
-     */
-    suspend fun createLandmark(
-        landmarkId: String,
-        name: String,
-        description: String,
-        bitmap: Bitmap
-    ): Boolean {
-        return try {
-            if (storageManager != null) {
-                val result = storageManager!!.saveImage(
-                    bitmap = bitmap,
-                    landmarkId = landmarkId,
-                    landmarkName = name,
-                    description = description,
-                    category = "Manual"
-                )
-                result is SaveResult.Success
-            } else {
-                Log.w(TAG, "Storage-Manager nicht verfügbar")
-                false
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Fehler beim Erstellen des Landmarks: ${e.message}")
-            false
-        }
-    }
-    
-    /**
-     * Lädt Feature-Navigation Route für ein bestimmtes Gebäude und Stockwerk
-     */
-    fun loadFeatureNavigationRoute(context: Context, building: String, floor: Int) {
-        viewModelScope.launch {
-            try {
-                Log.i(TAG, "Lade Feature-Navigation Route für Gebäude: $building, Stockwerk: $floor")
-                
-                // Erstelle eine Demo-Route mit Feature-Navigation
-                val demoSteps = listOf(
-                    FeatureNavigationStep(
-                        stepNumber = 1,
-                        instruction = "Gehen Sie geradeaus zum Haupteingang",
-                        building = building,
-                        targetLandmark = null
-                    ),
-                    FeatureNavigationStep(
-                        stepNumber = 2,
-                        instruction = "Biegen Sie links ab zur Treppe",
-                        building = building,
-                        targetLandmark = null
-                    ),
-                    FeatureNavigationStep(
-                        stepNumber = 3,
-                        instruction = "Gehen Sie die Treppe hoch zu Stockwerk $floor",
-                        building = building,
-                        targetLandmark = null
-                    ),
-                    FeatureNavigationStep(
-                        stepNumber = 4,
-                        instruction = "Folgen Sie dem Korridor bis zum Ziel",
-                        building = building,
-                        targetLandmark = null
-                    )
-                )
-                
-                val featureRoute = FeatureNavigationRoute(
-                    totalLength = 150.0, // 150 Meter
-                    steps = demoSteps
-                )
-                
-                _featureNavigationRoute.value = featureRoute
-                Log.i(TAG, "Feature-Navigation Route geladen: ${demoSteps.size} Schritte, ${featureRoute.totalLength}m")
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "Fehler beim Laden der Feature-Navigation Route: ${e.message}")
-            }
-        }
-    }
-    
-    /**
-     * Verarbeitet einen Kamera-Frame für Feature-Matching
-     */
-    fun processFrameForFeatureMatching(frame: org.opencv.core.Mat) {
-        viewModelScope.launch {
-            try {
-                // Simuliere Feature-Matching mit Demo-Daten
-                delay(100) // Simuliere Verarbeitungszeit
-                
-                // Erstelle Demo-Matches basierend auf verfügbaren Landmarks
-                val demoMatches = mutableListOf<FeatureMatchResult>()
-                
-                if (storageManager != null) {
-                    val availableLandmarks = storageManager!!.getAvailableProjectLandmarks()
-                    
-                    // Simuliere zufällige Matches mit unterschiedlichen Confidence-Werten
-                    availableLandmarks.take(3).forEachIndexed { index, landmarkInfo ->
-                        val confidence = when (index) {
-                            0 -> 0.85f + (Math.random() * 0.1f).toFloat() // Bestes Match
-                            1 -> 0.65f + (Math.random() * 0.15f).toFloat() // Mittleres Match
-                            else -> 0.45f + (Math.random() * 0.15f).toFloat() // Schwaches Match
-                        }
-                        
-                        if (confidence > 0.5f) { // Nur Matches über 50% Confidence
-                            val landmark = FeatureLandmark(
-                                id = landmarkInfo.id,
-                                name = landmarkInfo.filename.substringBeforeLast('.'), // Use filename without extension as name
-                                description = "Landmark from ${landmarkInfo.filename}",
-                                position = Position(0.0, 0.0, 0.0),
-                                imageUrl = "",
-                                confidence = confidence
-                            )
-                            
-                            demoMatches.add(
-                                FeatureMatchResult(
-                                    landmark = landmark,
-                                    matchCount = (confidence * 100).toInt(),
-                                    confidence = confidence,
-                                    distance = 5.0f + (Math.random() * 10.0f).toFloat()
-                                )
-                            )
-                        }
-                    }
-                }
-                
-                // Sortiere nach Confidence (beste zuerst)
-                demoMatches.sortByDescending { it.confidence }
-                
-                _currentMatches.value = demoMatches
-                
-                if (demoMatches.isNotEmpty()) {
-                    Log.d(TAG, "Feature-Matching: ${demoMatches.size} Matches gefunden, beste Confidence: ${demoMatches.first().confidence}")
-                }
-                
-            } catch (e: Exception) {
-                Log.e(TAG, "Fehler beim Feature-Matching: ${e.message}")
-                _currentMatches.value = emptyList()
-            }
-        }
-    }
-    
-
-    
-    /**
-     * Startet Frame-Processing für Feature-Matching
-     */
-    fun startFrameProcessing() {
-        viewModelScope.launch {
-            try {
-                Log.i(TAG, "Starte Frame-Processing für Feature-Matching...")
-                _isFeatureMappingEnabled.value = true
-                Log.i(TAG, "Frame-Processing gestartet")
-            } catch (e: Exception) {
-                Log.e(TAG, "Fehler beim Starten des Frame-Processing: ${e.message}")
-            }
-        }
-    }
-    
-    /**
-     * Gibt den aktuellen Startpunkt zurück
-     */
-    fun getCurrentStartPoint(): String {
-        return _currentRoute.value?.route?.path?.firstOrNull()?.xmlName ?: "Unbekannter Start"
-    }
-    
-    /**
-     * Gibt den aktuellen Endpunkt zurück
-     */
-    fun getCurrentEndPoint(): String {
-        return _currentRoute.value?.route?.path?.lastOrNull()?.xmlName ?: "Unbekanntes Ziel"
-    }
-    
-    /**
-     * Gibt verfügbare Landmarks zurück
-     */
-    fun getAvailableLandmarks(): List<FeatureLandmark> {
-        return try {
-            if (storageManager != null) {
-                val landmarkInfos = runBlocking { storageManager!!.getAvailableProjectLandmarks() }
-                landmarkInfos.map { landmarkInfo ->
-                    FeatureLandmark(
-                        id = landmarkInfo.id,
-                        name = landmarkInfo.filename.substringBeforeLast('.'), // Use filename without extension as name
-                        description = "Landmark from ${landmarkInfo.filename}",
-                        position = Position(0.0, 0.0, 0.0),
-                        imageUrl = "",
-                        confidence = 1.0f
-                    )
-                }
-            } else {
-                emptyList()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Fehler beim Laden der verfügbaren Landmarks: ${e.message}")
-            emptyList()
-        }
-    }
-    
-    /**
-     * Gibt die aktuellen Navigationsschritte zurück
-     */
     fun getCurrentNavigationSteps(): List<NavigationStep> {
         return try {
             val route = _currentRoute.value
@@ -666,18 +424,14 @@ class RouteViewModel : ViewModel() {
         }
     }
 
-    /**
-     * Gibt den aktuellen Navigationsschritt zurück
-     */
     fun getCurrentStep(): NavigationStep? {
         return try {
             val steps = getCurrentNavigationSteps()
             val currentStepNumber = _currentNavigationStep.value
-            
+
             if (steps.isNotEmpty() && currentStepNumber > 0 && currentStepNumber <= steps.size) {
-                steps[currentStepNumber - 1] // Convert to 0-based index
+                steps[currentStepNumber - 1]
             } else {
-                Log.w(TAG, "Aktueller Schritt nicht verfügbar: $currentStepNumber von ${steps.size}")
                 null
             }
         } catch (e: Exception) {
@@ -686,19 +440,82 @@ class RouteViewModel : ViewModel() {
         }
     }
 
-    /**
-     * Cleanup beim Destroy
-     */
+    fun logNavigationRoute(navigationRoute: NavigationRoute) {
+        Log.i(TAG, "=== Navigation Route Details ===")
+        Log.i(TAG, "Route ID: ${navigationRoute.id}")
+        Log.i(TAG, "Route Name: ${navigationRoute.name}")
+        Log.i(TAG, "Anzahl Schritte: ${navigationRoute.steps.size}")
+
+        navigationRoute.steps.forEachIndexed { index, step ->
+            Log.d(TAG, "Schritt ${index + 1}: ${step.instruction}")
+            Log.d(TAG, "  - Landmarks: ${step.landmarks.joinToString()}")
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         viewModelScope.launch {
             try {
-                // Storage-Manager bereinigt sich selbst automatisch
                 storageManager?.logPerformanceSummary()
                 Log.i(TAG, "RouteViewModel bereinigt")
             } catch (e: Exception) {
                 Log.e(TAG, "Fehler beim Bereinigen: ${e.message}")
             }
+        }
+    }
+    // In RouteViewModel.kt - Füge diese Methoden hinzu:
+
+    fun getCurrentStartPoint(): String? {
+        return try {
+            val steps = getCurrentNavigationSteps()
+            steps.firstOrNull()?.landmarks?.firstOrNull()?.name
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler beim Laden des Startpunkts: ${e.message}")
+            null
+        }
+    }
+
+    fun getCurrentEndPoint(): String? {
+        return try {
+            val steps = getCurrentNavigationSteps()
+            steps.lastOrNull()?.landmarks?.lastOrNull()?.name
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler beim Laden des Endpunkts: ${e.message}")
+            null
+        }
+    }
+
+    fun getAvailableLandmarks(): List<FeatureLandmark> {
+        return try {
+            val steps = getCurrentNavigationSteps()
+            val allLandmarks = mutableListOf<FeatureLandmark>()
+
+            steps.forEach { step ->
+                step.landmarks.forEach { landmark ->
+                    allLandmarks.add(
+                        FeatureLandmark(
+                            id = landmark.id,
+                            name = landmark.name,
+                            description = landmark.name,
+                            position = Position(0.0, 0.0, 0.0),
+                            imageUrl = "",
+                            confidence = 0.0f
+                        )
+                    )
+                }
+            }
+
+            allLandmarks.distinctBy { it.id }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler beim Laden der Landmarks: ${e.message}")
+            emptyList()
+        }
+    }
+
+    fun startFrameProcessing() {
+        viewModelScope.launch {
+            Log.i(TAG, "Frame-Processing gestartet")
+            _isFeatureMappingEnabled.value = true
         }
     }
 }

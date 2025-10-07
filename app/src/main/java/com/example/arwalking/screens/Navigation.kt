@@ -211,7 +211,7 @@ fun CameraScreen(
                     try {
                         val mat = Mat()
                         Utils.bitmapToMat(bitmap, mat)
-                        routeViewModel.processFrameForFeatureMatching(mat)
+                        // routeViewModel.processFrameForFeatureMatching(mat)
                     } catch (e: Exception) {
                         Log.e("CameraScreen", "Error processing frame for feature matching", e)
                     }

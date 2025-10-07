@@ -1,3 +1,4 @@
+/*
 package com.example.arwalking
 
 import android.graphics.Bitmap
@@ -232,3 +233,4 @@ class OpenCvCameraActivity : AppCompatActivity(), CameraBridgeViewBase.CvCameraV
         }
     }
 }
+*/

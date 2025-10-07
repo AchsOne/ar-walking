@@ -56,6 +56,9 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
 
+    // OpenCV
+    implementation(project(":opencv"))
+
     // Compose
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
@@ -81,9 +84,6 @@ dependencies {
     implementation("androidx.camera:camera-camera2:1.2.3")
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
-
-    // OpenCV - Lokales Modul
-    implementation(project(":opencv"))
 
     //3D Arrow - Temporarily disabled due to dependency issues
     // implementation("com.gorisse.thomas.sceneform:sceneform:1.22.0")
