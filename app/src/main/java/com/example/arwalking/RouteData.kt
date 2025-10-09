@@ -85,7 +85,7 @@ data class NodeData(
 
 data class RouteLandmarkData(
     val id: String,
-    val name: String,
+    val name: String = "",
     val type: String? = null,
     val x: Double? = null,
     val y: Double? = null

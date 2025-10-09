@@ -26,7 +26,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -51,14 +50,11 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.Brush
 import com.example.arwalking.ui.theme.GradientUtils
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -74,29 +70,20 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import kotlinx.coroutines.launch
 import com.example.arwalking.R
 import com.example.arwalking.RouteViewModel
-import com.example.arwalking.FeatureLandmark
-import com.example.arwalking.components.AR3DArrowOverlay
-import com.example.arwalking.components.ARInfoIsland
-import com.example.arwalking.components.ARScanStatus
 import com.example.arwalking.components.Animated3DArrowOverlay
 import com.example.arwalking.components.ExpandedARInfoIsland
 import com.example.arwalking.components.FeatureMappingStatusIndicator
 import com.example.arwalking.components.FeatureMatchOverlay
 import com.example.arwalking.components.rememberARScanStatus
-
-
 import com.example.arwalking.data.FavoritesRepository
 import components.NavigationDrawer
 import components.NavigationStepData
-import kotlinx.coroutines.delay
 import org.opencv.android.Utils
 import org.opencv.core.Mat
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
-import java.util.UUID
 
 
 val LocalNavController = staticCompositionLocalOf<NavController> {
@@ -143,12 +130,10 @@ fun CameraScreen(
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val routeViewModel: RouteViewModel = viewModel()
 
-    // Lädt Route und aktiviert Feature Mapping
     LaunchedEffect(Unit) {
         routeViewModel.loadNavigationRoute(context)
-        // Aktiviert Feature Mapping
         routeViewModel.enableStorageSystemImmediately(context)
-        // Startet Frame-Verarbeitung
+        routeViewModel.initializeFeatureMapping(context)
         routeViewModel.startFrameProcessing()
     }
 
@@ -209,9 +194,7 @@ fun CameraScreen(
                 onFrameProcessed = { bitmap ->
                     // Frame für Feature Mapping verarbeiten
                     try {
-                        val mat = Mat()
-                        Utils.bitmapToMat(bitmap, mat)
-                        // routeViewModel.processFrameForFeatureMatching(mat)
+                        routeViewModel.processFrameForFeatureMatching(bitmap)  // ✅ Direkt Bitmap übergeben!
                     } catch (e: Exception) {
                         Log.e("CameraScreen", "Error processing frame for feature matching", e)
                     }
@@ -449,7 +432,7 @@ fun ARWalkingUIOverlay(
         // Berechne aktuellen Schritt und Gesamtschritte aus der Route
         val currentStepNumber by routeViewModel.currentNavigationStep.collectAsState()
         val totalStepsCount = navigationSteps.size
-        
+        /*
         Animated3DArrowOverlay(
             matches = featureMatches,
             isFeatureMappingEnabled = isFeatureMappingEnabled,
@@ -468,7 +451,7 @@ fun ARWalkingUIOverlay(
                 .align(Alignment.TopStart)
                 .padding(top = 80.dp)
         )
-
+        */
         // Feature Mapping Status Indicator
         FeatureMappingStatusIndicator(
             isEnabled = isFeatureMappingEnabled,
