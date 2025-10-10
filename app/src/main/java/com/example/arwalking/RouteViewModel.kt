@@ -46,6 +46,24 @@ class RouteViewModel : ViewModel() {
 
     private val _isProcessingFrame = MutableStateFlow(false)
     val isProcessingFrame: StateFlow<Boolean> = _isProcessingFrame.asStateFlow()
+    
+    // ========== INTELLIGENTE NAVIGATION STATE ==========
+    
+    private val _completedSteps = MutableStateFlow<Set<Int>>(emptySet())
+    val completedSteps: StateFlow<Set<Int>> = _completedSteps.asStateFlow()
+    
+    private val _deletedSteps = MutableStateFlow<Set<Int>>(emptySet())
+    val deletedSteps: StateFlow<Set<Int>> = _deletedSteps.asStateFlow()
+    
+    private val _navigationStatus = MutableStateFlow<NavigationStatus>(NavigationStatus.WAITING)
+    val navigationStatus: StateFlow<NavigationStatus> = _navigationStatus.asStateFlow()
+    
+    // Landmark-basierte Navigation
+    private var landmarkDetectionHistory = mutableMapOf<String, DetectionHistory>()
+    private val confidenceThreshold = 0.66f
+    private val stabilityDuration = 3000L // 3 Sekunden
+    private val lowConfidenceThreshold = 0.40f
+    private val lostTrackingDuration = 10000L // 10 Sekunden
 
     // Feature Detector - AKAZE für bessere Indoor-Performance
     private var akazeDetector: AKAZE? = null
@@ -72,6 +90,31 @@ class RouteViewModel : ViewModel() {
         val matchCount: Int,
         val confidence: Float,
         val distance: Float
+    )
+    
+    data class DetectionHistory(
+        val landmarkId: String,
+        val stepNumber: Int,
+        var firstDetectionTime: Long = 0L,
+        var lastDetectionTime: Long = 0L,
+        var highestConfidence: Float = 0f,
+        var isStable: Boolean = false
+    )
+    
+    enum class NavigationStatus {
+        WAITING,           // Warte auf erste Landmark-Erkennung
+        TRACKING,          // Aktive Landmark-Verfolgung
+        STEP_COMPLETED,    // Schritt erfolgreich abgeschlossen
+        LOST_TRACKING,     // Tracking verloren
+        ROUTE_COMPLETED    // Gesamte Route abgeschlossen
+    }
+    
+    data class StepTransition(
+        val fromStep: Int,
+        val toStep: Int,
+        val trigger: String,
+        val confidence: Float,
+        val timestamp: Long = System.currentTimeMillis()
     )
 
     // ========== ROUTE MANAGEMENT METHODS ==========
@@ -259,6 +302,234 @@ class RouteViewModel : ViewModel() {
         // Entferne Duplikate basierend auf ID
         return allLandmarks.distinctBy { it.id }
     }
+    
+    // ========== INTELLIGENTE NAVIGATION METHODS ==========
+    
+    /**
+     * 🎯 Intelligente Schritt-Erkennung basierend auf Landmark-Matches
+     */
+    private fun analyzeStepProgression(matches: List<LandmarkMatch>) {
+        Log.i("Navigation", "🎯 analyzeStepProgression gestartet mit ${matches.size} matches")
+        
+        if (matches.isEmpty()) {
+            Log.i("Navigation", "⚠ Keine Matches - handleNoLandmarkDetection")
+            handleNoLandmarkDetection()
+            return
+        }
+        
+        val currentTime = System.currentTimeMillis()
+        val bestMatch = matches.first() // Bereits nach Confidence sortiert
+        Log.i("Navigation", "🎯 Bester Match: ${bestMatch.landmark.id} mit ${(bestMatch.confidence * 100).toInt()}% confidence")
+        
+        // Finde den Schritt, der diese Landmark enthält
+        val targetStep = findStepForLandmark(bestMatch.landmark.id)
+        Log.i("Navigation", "🗺 Landmark ${bestMatch.landmark.id} gehört zu Schritt: $targetStep")
+        
+        if (targetStep == -1) {
+            Log.w("Navigation", "⚠ Landmark ${bestMatch.landmark.id} keinem Schritt zugeordnet")
+            return
+        }
+        
+        // Aktualisiere Detection History
+        updateDetectionHistory(bestMatch.landmark.id, targetStep, bestMatch.confidence, currentTime)
+        
+        // Prüfe ob Schritt-Wechsel ausgelöst werden soll
+        val history = landmarkDetectionHistory[bestMatch.landmark.id]
+        if (history?.isStable == true && bestMatch.confidence >= confidenceThreshold) {
+            handleStepTransition(targetStep, bestMatch.confidence, "landmark_${bestMatch.landmark.id}")
+        }
+    }
+    
+    /**
+     * Findet den Schritt-Index für eine gegebene Landmark-ID
+     */
+    private fun findStepForLandmark(landmarkId: String): Int {
+        val route = _currentRoute.value ?: return -1
+        
+        route.steps.forEachIndexed { index, step ->
+            if (step.landmarks.any { it.id == landmarkId }) {
+                return index
+            }
+        }
+        return -1
+    }
+    
+    /**
+     * Aktualisiert die Detection History für eine Landmark
+     */
+    private fun updateDetectionHistory(
+        landmarkId: String,
+        stepNumber: Int,
+        confidence: Float,
+        currentTime: Long
+    ) {
+        val existing = landmarkDetectionHistory[landmarkId]
+        
+        if (existing == null) {
+            // Erste Erkennung
+            landmarkDetectionHistory[landmarkId] = DetectionHistory(
+                landmarkId = landmarkId,
+                stepNumber = stepNumber,
+                firstDetectionTime = currentTime,
+                lastDetectionTime = currentTime,
+                highestConfidence = confidence,
+                isStable = false
+            )
+            Log.d("Navigation", "🆕 Erste Erkennung: $landmarkId (${(confidence * 100).toInt()}%)")
+        } else {
+            // Aktualisiere bestehende History
+            existing.lastDetectionTime = currentTime
+            existing.highestConfidence = maxOf(existing.highestConfidence, confidence)
+            
+            // Prüfe Stabilität (mindestens X Sekunden kontinuierliche Erkennung)
+            val detectionDuration = currentTime - existing.firstDetectionTime
+            if (detectionDuration >= stabilityDuration && confidence >= confidenceThreshold) {
+                if (!existing.isStable) {
+                    existing.isStable = true
+                    Log.i("Navigation", "✅ Stabile Erkennung: $landmarkId nach ${detectionDuration}ms")
+                }
+            }
+        }
+    }
+    
+    /**
+     * 🎯 Behandelt Schritt-Übergänge mit intelligentem Scoring
+     */
+    private fun handleStepTransition(targetStep: Int, confidence: Float, trigger: String) {
+        val currentStep = _currentNavigationStep.value
+        
+        if (targetStep == currentStep) {
+            // Gleicher Schritt - bestätige aktuelle Position
+            Log.d("Navigation", "📍 Position bestätigt: Schritt $currentStep (${(confidence * 100).toInt()}%)")
+            return
+        }
+        
+        // Gewichteter Score für Schritt-Übergang
+        val stepDistance = kotlin.math.abs(targetStep - currentStep)
+        val stepProximityScore = when {
+            stepDistance == 1 -> 1.0f // Nächster/vorheriger Schritt
+            stepDistance <= 2 -> 0.7f // Nahegelegene Schritte
+            else -> 0.3f // Weit entfernte Schritte
+        }
+        
+        val historyScore = if (targetStep > currentStep) 0.9f else 0.6f // Bevorzuge Vorwärts-Navigation
+        
+        // 🎯 BONUS für sehr hohe Confidence (>70%)
+        val confidenceBonus = if (confidence >= 0.70f) 0.1f else 0f
+        val combinedScore = (confidence * 0.6f) + (stepProximityScore * 0.3f) + (historyScore * 0.1f) + confidenceBonus
+        
+        Log.i("Navigation", "🧮 Schritt-Score: Step $currentStep→$targetStep, Combined: ${(combinedScore * 100).toInt()}%")
+        
+        // 🎯 ANGEPASSTE Schwellenwerte für verschiedene Sprung-Distanzen
+        val requiredScore = when {
+            stepDistance == 1 -> 0.65f      // Nächster Schritt: 65%
+            stepDistance <= 3 -> 0.70f      // Nahe Schritte: 70% 
+            stepDistance <= 5 -> 0.72f      // Mittlere Sprünge: 72%
+            else -> 0.75f                   // Große Sprünge: 75%
+        }
+        
+        Log.i("Navigation", "📊 Schwellenwert für ${stepDistance}-Schritt-Sprung: ${(requiredScore * 100).toInt()}%")
+        
+        if (combinedScore >= requiredScore) {
+            performStepTransition(currentStep, targetStep, trigger, confidence)
+        } else {
+            Log.d("Navigation", "🚫 Schritt-Wechsel abgelehnt: Score ${(combinedScore * 100).toInt()}% < ${(requiredScore * 100).toInt()}% (${stepDistance} Schritte)")
+        }
+    }
+    
+    /**
+     * Führt tatsächlichen Schritt-Wechsel durch
+     */
+    private fun performStepTransition(fromStep: Int, toStep: Int, trigger: String, confidence: Float) {
+        Log.i("Navigation", "🎯 Schritt-Wechsel: $fromStep → $toStep (Trigger: $trigger, ${(confidence * 100).toInt()}%)")
+        
+        // Markiere vorherigen Schritt als abgeschlossen
+        if (toStep > fromStep) {
+            val newCompleted = _completedSteps.value.toMutableSet()
+            for (step in fromStep until toStep) {
+                newCompleted.add(step)
+            }
+            _completedSteps.value = newCompleted
+            Log.i("Navigation", "✅ Schritte $fromStep bis ${toStep - 1} als abgeschlossen markiert")
+        }
+        
+        // Wechsle zum neuen Schritt
+        _currentNavigationStep.value = toStep
+        _navigationStatus.value = NavigationStatus.STEP_COMPLETED
+        
+        // Reset Detection History für sauberen Übergang
+        landmarkDetectionHistory.clear()
+        
+        // Logge Transition
+        val transition = StepTransition(fromStep, toStep, trigger, confidence)
+        Log.i("Navigation", "📝 Transition geloggt: $transition")
+    }
+    
+    /**
+     * Behandelt den Fall, wenn keine Landmarks erkannt werden
+     */
+    private fun handleNoLandmarkDetection() {
+        val currentTime = System.currentTimeMillis()
+        
+        // Prüfe ob wir lange keine Landmarks gesehen haben
+        val lastDetection = landmarkDetectionHistory.values.maxByOrNull { it.lastDetectionTime }
+        if (lastDetection != null) {
+            val timeSinceLastDetection = currentTime - lastDetection.lastDetectionTime
+            
+            if (timeSinceLastDetection > lostTrackingDuration) {
+                if (_navigationStatus.value != NavigationStatus.LOST_TRACKING) {
+                    _navigationStatus.value = NavigationStatus.LOST_TRACKING
+                    Log.w("Navigation", "⚠ Tracking verloren nach ${timeSinceLastDetection}ms ohne Landmark")
+                }
+            }
+        }
+    }
+    
+    /**
+     * 🗑 Markiert einen Schritt als gelöscht (Swipe-to-Delete)
+     */
+    fun deleteCompletedStep(stepNumber: Int) {
+        val completed = _completedSteps.value
+        if (stepNumber in completed) {
+            val newDeleted = _deletedSteps.value.toMutableSet()
+            newDeleted.add(stepNumber)
+            _deletedSteps.value = newDeleted
+            Log.i("Navigation", "🗑 Schritt $stepNumber als gelöscht markiert")
+            
+            // Auto-restore nach 10 Sekunden
+            viewModelScope.launch {
+                kotlinx.coroutines.delay(10000L)
+                restoreDeletedStep(stepNumber)
+            }
+        }
+    }
+    
+    /**
+     * 🔄 Stellt einen gelöschten Schritt wieder her
+     */
+    fun restoreDeletedStep(stepNumber: Int) {
+        val newDeleted = _deletedSteps.value.toMutableSet()
+        if (newDeleted.remove(stepNumber)) {
+            _deletedSteps.value = newDeleted
+            Log.i("Navigation", "🔄 Schritt $stepNumber wiederhergestellt")
+        }
+    }
+    
+    /**
+     * 🔄 Setzt die komplette Navigation zurück
+     */
+    fun resetNavigation() {
+        Log.i("Navigation", "🔄 Navigation wird zurückgesetzt")
+        
+        _currentNavigationStep.value = 0
+        _completedSteps.value = emptySet()
+        _deletedSteps.value = emptySet()
+        _navigationStatus.value = NavigationStatus.WAITING
+        
+        landmarkDetectionHistory.clear()
+        
+        Log.i("Navigation", "✅ Navigation erfolgreich zurückgesetzt")
+    }
 
     // ========== FEATURE MAPPING METHODS ==========
 
@@ -429,6 +700,15 @@ class RouteViewModel : ViewModel() {
 
                     // Aktualisiere UI
                     _currentMatches.value = matches
+                    
+                    // 🎯 INTELLIGENTE SCHRITT-ANALYSE
+                    Log.i("Navigation", "🔍 Starte Schritt-Analyse mit ${matches.size} matches...")
+                    try {
+                        analyzeStepProgression(matches)
+                        Log.i("Navigation", "✅ Schritt-Analyse erfolgreich abgeschlossen")
+                    } catch (e: Exception) {
+                        Log.e("Navigation", "❌ Fehler in Schritt-Analyse: ${e.message}", e)
+                    }
 
                     // Logge Top-Matches
                     if (matches.isNotEmpty()) {

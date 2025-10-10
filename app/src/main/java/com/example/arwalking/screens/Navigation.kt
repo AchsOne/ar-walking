@@ -477,7 +477,11 @@ fun ARWalkingUIOverlay(
 
 
 
-        // Navigation Drawer
+        // 🎯 INTELLIGENTE Navigation Drawer mit Status-Visualisierung
+        val currentStepIndex by routeViewModel.currentNavigationStep.collectAsState()
+        val completedSteps by routeViewModel.completedSteps.collectAsState()
+        val deletedSteps by routeViewModel.deletedSteps.collectAsState()
+        
         NavigationDrawer(
             navigationSteps = navigationSteps,
             destinationLabel = actualDestination,
