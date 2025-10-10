@@ -18,8 +18,18 @@ class OpenCvMatchingTest(private val context: Context) {
 
     private val TAG = "OpenCvMatchingTest"
 
-    // Feature Detector & Matcher
-    private val detector = ORB.create(500)
+    // Feature Detector & Matcher mit optimierten Einstellungen
+    private val detector = ORB.create(
+        1500,     // Mehr Features für bessere Erkennung
+        1.2f,     // Skalierungsfaktor
+        8,        // Mehr Pyramid-Level
+        31,       // Edge-Threshold
+        0,        // First level
+        2,        // WTA_K
+        ORB.HARRIS_SCORE,  // Harris Corner Score
+        31,       // Patch Size
+        20        // Fast Threshold
+    )
     private val matcher = DescriptorMatcher.create(DescriptorMatcher.BRUTEFORCE_HAMMING)
 
     /**

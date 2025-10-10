@@ -17,8 +17,9 @@ class ContextualFeatureMatcher(private val context: Context) {
 
     companion object {
         private const val TAG = "ContextMatcher"
-        private const val MIN_CONFIDENCE_THRESHOLD = 0.5f // Mindestens 50% Similarity
-        private const val STRONG_MATCH_THRESHOLD = 0.7f  // Ab 70% als "sicherer" Match
+        private const val MIN_CONFIDENCE_THRESHOLD = 0.6f // Erhöht für bessere Genauigkeit
+        private const val STRONG_MATCH_THRESHOLD = 0.8f  // Erhöht für sicherere Matches
+        private const val EXCELLENT_MATCH_THRESHOLD = 0.9f // Neuer Threshold für exzellente Matches
     }
 
     // Cache für Landmark-Signaturen

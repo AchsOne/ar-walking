@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -461,13 +462,13 @@ fun ARWalkingUIOverlay(
                 .padding(top = 110.dp, end = 16.dp)
         )
 
-        // AR Info Island - zeigt AR-Status und Landmark-Informationen
+        // 🎯 AR Info Island - GARANTIERT SICHTBAR für Debug
         ARInfoIslandOverlay(
             routeViewModel = routeViewModel,
             modifier = Modifier
-                .align(Alignment.Center)
-                .padding(horizontal = 32.dp)
-                .offset(y = (-150).dp)
+                .align(Alignment.TopCenter)
+                .padding(horizontal = 16.dp)
+                .offset(y = 140.dp)
         )
 
 
@@ -636,48 +637,85 @@ fun CameraPreviewView(
     )
 }
 
+// Hilfsfunktionen für Bildkonvertierung
+private fun yuv420ToNv21(imageProxy: ImageProxy): ByteArray {
+    val yPlane = imageProxy.planes[0]
+    val uPlane = imageProxy.planes[1]
+    val vPlane = imageProxy.planes[2]
+    
+    val ySize = yPlane.buffer.remaining()
+    val uSize = uPlane.buffer.remaining()
+    val vSize = vPlane.buffer.remaining()
+    
+    val nv21 = ByteArray(ySize + uSize + vSize)
+    
+    // Y Plane
+    yPlane.buffer.get(nv21, 0, ySize)
+    
+    val uvPixelStride = uPlane.pixelStride
+    if (uvPixelStride == 1) {
+        // UV Planes are packed together
+        uPlane.buffer.get(nv21, ySize, uSize)
+        vPlane.buffer.get(nv21, ySize + uSize, vSize)
+    } else {
+        // UV Planes need interleaving for NV21
+        val uvBuffer = ByteArray(uSize + vSize)
+        uPlane.buffer.get(uvBuffer, 0, uSize)
+        vPlane.buffer.get(uvBuffer, uSize, vSize)
+        
+        // Interleave V and U for NV21 format (VUVU...)
+        var uvIndex = 0
+        for (i in 0 until uSize) {
+            nv21[ySize + uvIndex] = uvBuffer[uSize + i] // V
+            nv21[ySize + uvIndex + 1] = uvBuffer[i] // U
+            uvIndex += 2
+        }
+    }
+    
+    return nv21
+}
+
+private fun rotateBitmapIfNeeded(bitmap: Bitmap, rotationDegrees: Int): Bitmap {
+    if (rotationDegrees == 0) return bitmap
+    
+    val matrix = Matrix().apply {
+        postRotate(rotationDegrees.toFloat())
+    }
+    
+    return try {
+        val rotatedBitmap = Bitmap.createBitmap(
+            bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
+        )
+        // Ursprüngliches Bitmap freigeben wenn es ein neues erstellt wurde
+        if (rotatedBitmap != bitmap) {
+            bitmap.recycle()
+        }
+        rotatedBitmap
+    } catch (e: OutOfMemoryError) {
+        Log.e("CameraPreview", "Out of memory rotating bitmap", e)
+        bitmap // Fallback: Original zurückgeben
+    }
+}
+
 // Improved bitmap conversion function
 private fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
     return try {
         when (imageProxy.format) {
             ImageFormat.YUV_420_888 -> {
-                // Handle YUV format (most common)
-                val yBuffer = imageProxy.planes[0].buffer
-                val uBuffer = imageProxy.planes[1].buffer
-                val vBuffer = imageProxy.planes[2].buffer
-
-                val ySize = yBuffer.remaining()
-                val uSize = uBuffer.remaining()
-                val vSize = vBuffer.remaining()
-
-                val nv21 = ByteArray(ySize + uSize + vSize)
-
-                yBuffer.get(nv21, 0, ySize)
-                vBuffer.get(nv21, ySize, vSize)
-                uBuffer.get(nv21, ySize + vSize, uSize)
-
+                val nv21 = yuv420ToNv21(imageProxy)
                 val yuvImage = YuvImage(nv21, ImageFormat.NV21, imageProxy.width, imageProxy.height, null)
                 val out = ByteArrayOutputStream()
-                yuvImage.compressToJpeg(Rect(0, 0, yuvImage.width, yuvImage.height), 75, out)
-                val imageBytes = out.toByteArray()
-
-                val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-
-                // Rotate bitmap if needed
-                val rotationDegrees = imageProxy.imageInfo.rotationDegrees
-                if (rotationDegrees != 0) {
-                    val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
-                    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-                }
-
-                bitmap
+                yuvImage.compressToJpeg(Rect(0, 0, imageProxy.width, imageProxy.height), 90, out)
+                val bytes = out.toByteArray()
+                val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                rotateBitmapIfNeeded(bitmap, imageProxy.imageInfo.rotationDegrees)
             }
             ImageFormat.JPEG -> {
-                // Handle JPEG format
                 val buffer: ByteBuffer = imageProxy.planes[0].buffer
                 val bytes = ByteArray(buffer.remaining())
                 buffer.get(bytes)
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                rotateBitmapIfNeeded(bitmap, imageProxy.imageInfo.rotationDegrees)
             }
             else -> {
                 Log.w("CameraPreview", "Unsupported image format: ${imageProxy.format}")
@@ -742,6 +780,14 @@ private fun ARInfoIslandOverlay(
     val landmarkCount = matches.size
     val bestConfidence = matches.maxOfOrNull { match -> match.confidence } ?: 0f
     val isTracking = matches.isNotEmpty()
+    
+    // 🔍 DEBUG: Logge UI-Werte für bessere Diagnose
+    LaunchedEffect(matches, isFeatureMappingEnabled) {
+        Log.d("ARInfoIsland", "📱 UI Update: enabled=$isFeatureMappingEnabled, matches=${matches.size}, bestConf=${(bestConfidence * 100).toInt()}%")
+        matches.forEachIndexed { index, match ->
+            Log.d("ARInfoIsland", "  🎯 Match $index: ${match.landmark.name ?: "unnamed"} - ${(match.confidence * 100).toInt()}%")
+        }
+    }
     
     // Automatischer AR-Status basierend auf aktuellen Bedingungen
     val arStatus = rememberARScanStatus(

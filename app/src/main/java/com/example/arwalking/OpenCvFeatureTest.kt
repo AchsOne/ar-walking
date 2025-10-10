@@ -18,8 +18,18 @@ class OpenCvFeatureTest(private val context: Context) {
 
     private val TAG = "OpenCvFeatureTest"
 
-    // ORB Feature Detector (gut für mobile Geräte)
-    private val detector = ORB.create(500) // 500 Features pro Bild
+    // ORB Feature Detector mit optimierten Einstellungen für höhere Genauigkeit
+    private val detector = ORB.create(
+        1500,     // Mehr Features für bessere Erkennung
+        1.2f,     // Skalierungsfaktor (Standard)
+        8,        // Mehr Pyramid-Level für Multiskalenerkennnung
+        31,       // Edge-Threshold (Standard)
+        0,        // First level (Standard)
+        2,        // WTA_K für BRIEF Descriptor
+        ORB.HARRIS_SCORE,  // Harris Corner Score für bessere Feature-Qualität
+        31,       // Patch Size
+        20        // Fast Threshold
+    )
 
     /**
      * Test 1: Extrahiere Features aus einem Bild

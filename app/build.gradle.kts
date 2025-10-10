@@ -1,4 +1,3 @@
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -32,7 +31,7 @@ android {
             buildConfigField("boolean", "DEBUG_FEATURE_MAPPING", "false")
         }
     }
-    
+
     buildFeatures {
         buildConfig = true
     }
@@ -49,6 +48,12 @@ android {
     buildFeatures {
         compose = true
     }
+    
+    packaging {
+        jniLibs {
+            pickFirsts += "**/libc++_shared.so"
+        }
+    }
 }
 
 dependencies {
@@ -57,7 +62,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
 
     // OpenCV
-    implementation(project(":opencv"))
+    implementation(project(":sdk"))
+
+
 
     // Compose
     implementation(libs.androidx.activity.compose)

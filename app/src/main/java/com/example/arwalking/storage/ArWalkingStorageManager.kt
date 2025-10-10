@@ -12,7 +12,7 @@ import kotlinx.coroutines.withContext
  * Vereint alle Storage-Komponenten und lädt Bilder direkt aus dem Projektverzeichnis
  * 
  * Features:
- * - Lädt Bilder direkt aus /Users/florian/Documents/GitHub/ar-walking/landmark_images/
+ * - Lädt Bilder direkt
  * - Kein Trainingsmodus erforderlich - einfach Bilder hinzufügen!
  * - LRU-Cache für 50 Vollbilder und 100 Thumbnails
  * - Automatische Thumbnail-Generierung (256x256px)

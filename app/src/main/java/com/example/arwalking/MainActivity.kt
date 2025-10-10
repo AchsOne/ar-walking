@@ -101,6 +101,10 @@ class MainActivity : ComponentActivity() {
             } else {
                 Toast.makeText(this, "❌ Feature-Matching fehlgeschlagen!", Toast.LENGTH_LONG).show()
             }
+            
+            // SCHRITT 4: Erweiterte Tests (temporär deaktiviert)
+            // TODO: Erweiterte Tests aktivieren nach Bugfix
+            Log.i("MainActivity", "🚀 Erweiterte Features verfügbar (Tests deaktiviert)")
         }
 
         // ViewModel erstellen

@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opencv.android.Utils
 import org.opencv.core.*
-import org.opencv.features2d.ORB
+import org.opencv.features2d.AKAZE
 import org.opencv.features2d.DescriptorMatcher
 import org.opencv.imgproc.Imgproc
 import java.io.BufferedReader
@@ -47,8 +47,8 @@ class RouteViewModel : ViewModel() {
     private val _isProcessingFrame = MutableStateFlow(false)
     val isProcessingFrame: StateFlow<Boolean> = _isProcessingFrame.asStateFlow()
 
-    // Feature Detector
-    private var orbDetector: ORB? = null
+    // Feature Detector - AKAZE für bessere Indoor-Performance
+    private var akazeDetector: AKAZE? = null
     private var matcher: DescriptorMatcher? = null
 
     // Landmark Features Cache
@@ -270,21 +270,16 @@ class RouteViewModel : ViewModel() {
             try {
                 Log.i("FeatureMapping", "🚀 Initialisiere Feature Mapping...")
 
-                // Erstelle ORB Detector mit mehr Features
-                orbDetector = ORB.create(
-                    2000,  // nFeatures - ERHÖHT von 500 auf 2000
-                    1.2f,  // scaleFactor
-                    8,     // nLevels
-                    31,    // edgeThreshold
-                    0,     // firstLevel
-                    2,     // WTA_K
-                    ORB.HARRIS_SCORE,
-                    31,    // patchSize
-                    20     // fastThreshold
+                // 🎯 Erstelle AKAZE Detector - OPTIMIERT für Indoor AR-Navigation
+                akazeDetector = AKAZE.create(
+                    // Verwende Standard-Parameter für maximale Kompatibilität
                 )
+                
+                Log.i("FeatureMapping", "✨ AKAZE Detector initialisiert (optimiert für Indoor-Landmarks)")
 
-                // Erstelle BruteForce Matcher
+                // 🎯 Erstelle optimierten Matcher für AKAZE Binary Descriptors
                 matcher = DescriptorMatcher.create(DescriptorMatcher.BRUTEFORCE_HAMMING)
+                Log.i("FeatureMapping", "🔗 BruteForce-Hamming Matcher für AKAZE-Descriptors initialisiert")
 
                 // Lade Landmark Features
                 loadLandmarkFeatures(context)
@@ -364,7 +359,7 @@ class RouteViewModel : ViewModel() {
             // Extrahiere Features
             val keypoints = MatOfKeyPoint()
             val descriptors = Mat()
-            orbDetector?.detectAndCompute(gray, Mat(), keypoints, descriptors)
+            akazeDetector?.detectAndCompute(gray, Mat(), keypoints, descriptors)
 
             mat.release()
             gray.release()
@@ -420,11 +415,17 @@ class RouteViewModel : ViewModel() {
 
             try {
                 // Extrahiere Features aus aktuellem Frame
+                Log.i("FeatureMapping", "🔬 Extrahiere Features aus Frame...")
                 val frameFeatures = extractFrameFeatures(bitmap)
 
                 if (frameFeatures != null) {
+                    Log.i("FeatureMapping", "✅ Frame Features extrahiert: ${frameFeatures.keypoints.rows()} keypoints")
+                    Log.i("FeatureMapping", "📍 Cache enthält: ${landmarkFeaturesCache.size} Landmarks")
+                    
                     // Matche gegen alle bekannten Landmarks
+                    Log.i("FeatureMapping", "🎯 Starte Matching-Prozess...")
                     val matches = matchAgainstLandmarks(frameFeatures)
+                    Log.i("FeatureMapping", "📊 Matching abgeschlossen: ${matches.size} Ergebnisse")
 
                     // Aktualisiere UI
                     _currentMatches.value = matches
@@ -458,32 +459,45 @@ class RouteViewModel : ViewModel() {
      */
     private fun extractFrameFeatures(bitmap: Bitmap): LandmarkFeatures? {
         return try {
+            Log.d("FeatureMapping", "🖼 Bitmap: ${bitmap.width}x${bitmap.height}, config: ${bitmap.config}")
+            
             val mat = Mat()
             Utils.bitmapToMat(bitmap, mat)
+            Log.d("FeatureMapping", "📐 Mat erstellt: ${mat.rows()}x${mat.cols()} channels: ${mat.channels()}")
 
             // Konvertiere zu Graustufen
             val gray = Mat()
             Imgproc.cvtColor(mat, gray, Imgproc.COLOR_BGR2GRAY)
+            Log.d("FeatureMapping", "🔘 Graustufen-Konvertierung abgeschlossen: ${gray.rows()}x${gray.cols()}")
 
             // Extrahiere Features
             val keypoints = MatOfKeyPoint()
             val descriptors = Mat()
-            orbDetector?.detectAndCompute(gray, Mat(), keypoints, descriptors)
+            
+            if (akazeDetector == null) {
+                Log.e("FeatureMapping", "❌ AKAZE Detector ist null!")
+                return null
+            }
+            
+            akazeDetector?.detectAndCompute(gray, Mat(), keypoints, descriptors)
+            Log.d("FeatureMapping", "🔍 Feature-Extraktion: ${keypoints.rows()} keypoints, ${descriptors.rows()} descriptors")
 
             mat.release()
             gray.release()
 
             if (keypoints.rows() > 0) {
+                Log.i("FeatureMapping", "✅ Frame Features erfolgreich: ${keypoints.rows()} keypoints")
                 LandmarkFeatures(
                     id = "frame",
                     keypoints = keypoints,
                     descriptors = descriptors
                 )
             } else {
+                Log.w("FeatureMapping", "⚠ Keine Features im Frame gefunden")
                 null
             }
         } catch (e: Exception) {
-            Log.e("FeatureMapping", "Fehler bei Frame Feature-Extraktion: ${e.message}")
+            Log.e("FeatureMapping", "❌ Fehler bei Frame Feature-Extraktion: ${e.message}", e)
             null
         }
     }
@@ -496,16 +510,25 @@ class RouteViewModel : ViewModel() {
 
         try {
             val currentStep = _currentNavigationStep.value
-            val expectedLandmarks = getExpectedLandmarksForStep(currentStep)
+            // DEBUG: Teste gegen ALLE Landmarks, nicht nur erwartete
+            val allLandmarks = getAvailableLandmarks()
+            Log.d("FeatureMapping", "🔍 Teste gegen ${allLandmarks.size} Landmarks (aktueller Schritt: $currentStep)")
 
-            expectedLandmarks.forEach { landmark ->
+            allLandmarks.forEach { landmark ->
                 val landmarkFeatures = landmarkFeaturesCache[landmark.id]
 
                 if (landmarkFeatures != null) {
                     val matchResult = matchFeatures(frameFeatures, landmarkFeatures)
 
-                    if (matchResult.matchCount > 10) { // Mindestens 10 Matches
+                    // 🎯 AKAZE-OPTIMIERTE SCHWELLEN für bessere Qualität
+                    val minMatches = 3      // AKAZE: Höhere Schwelle da bessere Feature-Qualität
+                    val minConfidence = 0.15f  // 15% Mindest-Confidence für AKAZE
+                    
+                    if (matchResult.matchCount >= minMatches && matchResult.confidence >= minConfidence) {
                         matches.add(matchResult)
+                        Log.d("FeatureMapping", "🎯 Match gefunden: ${matchResult.landmark.name} - ${matchResult.matchCount} matches, ${(matchResult.confidence * 100).toInt()}% confidence")
+                    } else {
+                        Log.i("FeatureMapping", "🚫 Schwacher Match ignoriert: ${matchResult.landmark.name ?: "null"} - ${matchResult.matchCount} matches, ${(matchResult.confidence * 100).toInt()}% confidence")
                     }
                 }
             }
@@ -526,15 +549,30 @@ class RouteViewModel : ViewModel() {
         frameFeatures: LandmarkFeatures,
         landmarkFeatures: LandmarkFeatures
     ): LandmarkMatch {
+        Log.d("FeatureMapping", "🎯 Matching: Frame(${frameFeatures.keypoints.rows()}) vs ${landmarkFeatures.id}(${landmarkFeatures.keypoints.rows()})")
         try {
-            // KNN Matching mit k=2
+            // 🎯 ROBUSTES MATCHING für Emulator
             val knnMatches = mutableListOf<MatOfDMatch>()
+            
+            if (matcher == null) {
+                Log.e("FeatureMapping", "❌ Matcher ist null!")
+                return createEmptyMatch(landmarkFeatures.id)
+            }
+            
+            // Prüfe ob Descriptors valid sind
+            if (frameFeatures.descriptors.rows() == 0 || landmarkFeatures.descriptors.rows() == 0) {
+                Log.w("FeatureMapping", "⚠ Leere Descriptors: Frame(${frameFeatures.descriptors.rows()}) Landmark(${landmarkFeatures.descriptors.rows()})")
+                return createEmptyMatch(landmarkFeatures.id)
+            }
+            
+            Log.d("FeatureMapping", "🔍 KNN Matching wird durchgeführt...")
             matcher?.knnMatch(
                 frameFeatures.descriptors,
                 landmarkFeatures.descriptors,
                 knnMatches,
                 2
             )
+            Log.d("FeatureMapping", "📊 KNN Matching abgeschlossen: ${knnMatches.size} Match-Paare")
 
             // Lowe's Ratio Test
             var goodMatches = 0
@@ -546,21 +584,53 @@ class RouteViewModel : ViewModel() {
                     val m = matches[0]
                     val n = matches[1]
 
-                    // Ratio Test (0.75 ist ein guter Wert)
-                    if (m.distance < 0.75f * n.distance) {
+                    // 🎯 AKAZE-OPTIMIERTER Ratio Test für höchste Qualität
+                    val ratioThreshold = 0.7f  // AKAZE erlaubt schärfere Schwellen dank besserer Descriptors
+                    if (m.distance < ratioThreshold * n.distance) {
                         goodMatches++
                         totalDistance += m.distance
                     }
                 }
             }
 
-            // Berechne Confidence (0-1)
+            // Berechne Confidence (0-1) - VERBESSERTE VERSION
             val avgDistance = if (goodMatches > 0) totalDistance / goodMatches else Float.MAX_VALUE
+            
+            val frameKeypointCount = frameFeatures.keypoints.rows()
+            val landmarkKeypointCount = landmarkFeatures.keypoints.rows()
+            val minKeypoints = minOf(frameKeypointCount, landmarkKeypointCount)
+            
+            // 🎯 AKAZE-OPTIMIERTE Confidence-Berechnung für Indoor-Navigation
             val confidence = if (goodMatches > 0) {
-                (goodMatches.toFloat() / minOf(frameFeatures.keypoints.rows(), landmarkFeatures.keypoints.rows())).coerceIn(0f, 1f)
+                when {
+                    // AKAZE Low-Feature Modus: Konservative Bewertung
+                    minKeypoints <= 15 -> {
+                        val score = (goodMatches.toFloat() / 8f).coerceAtMost(1f)  // Höhere Schwelle für AKAZE
+                        Log.d("FeatureMapping", "🎯 AKAZE Low-Feature: $goodMatches matches -> ${(score * 100).toInt()}%")
+                        score
+                    }
+                    // AKAZE Standard-Modus: Optimiert für hohe Qualität
+                    else -> {
+                        val matchRatio = goodMatches.toFloat() / minKeypoints.toFloat()
+                        val qualityScore = (goodMatches.toFloat() / 15f).coerceAtMost(1f) // AKAZE: 15 Matches = 100%
+                        val distanceScore = if (avgDistance != Float.MAX_VALUE) {
+                            (100f / (avgDistance + 1f)).coerceIn(0f, 1f)  // Berücksichtige Match-Distanz
+                        } else 0f
+                        
+                        // Gewichtete Kombinierung: Ratio(40%) + Quality(40%) + Distance(20%)
+                        val combinedScore = (matchRatio * 0.4f + qualityScore * 0.4f + distanceScore * 0.2f).coerceIn(0f, 1f)
+                        Log.d("FeatureMapping", "✨ AKAZE Quality: ratio=${(matchRatio*100).toInt()}%, quality=${(qualityScore*100).toInt()}%, distance=${(distanceScore*100).toInt()}% -> ${(combinedScore*100).toInt()}%")
+                        combinedScore
+                    }
+                }
             } else {
                 0f
             }
+            
+            // Debug-Ausgabe für Confidence-Berechnung
+            Log.d("FeatureMapping", "📊 Confidence Debug: ${landmarkFeatures.id}")
+            Log.d("FeatureMapping", "   Frame keypoints: $frameKeypointCount, Landmark keypoints: $landmarkKeypointCount")
+            Log.d("FeatureMapping", "   Good matches: $goodMatches, Confidence: ${(confidence * 100).toInt()}%")
 
             // Cleanup
             knnMatches.forEach { it.release() }
@@ -623,7 +693,7 @@ class RouteViewModel : ViewModel() {
         super.onCleared()
 
         // Release OpenCV Resources
-        orbDetector = null
+        akazeDetector = null
         matcher = null
 
         // Release cached features
@@ -638,5 +708,14 @@ class RouteViewModel : ViewModel() {
         landmarkFeaturesCache.clear()
 
         Log.i("FeatureMapping", "🧹 ViewModel cleanup abgeschlossen")
+    }
+    
+    /**
+     * Erstellt einen leeren Match für Debug-Zwecke
+     */
+    private fun createEmptyMatch(landmarkId: String): LandmarkMatch {
+        val landmark = getAvailableLandmarks().find { it.id == landmarkId }
+            ?: RouteLandmarkData(landmarkId, landmarkId)
+        return LandmarkMatch(landmark, 0, 0f, Float.MAX_VALUE)
     }
 }

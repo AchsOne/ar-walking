@@ -167,28 +167,35 @@ fun ExpandedARInfoIsland(
                     )
                 }
                 
-                // Zusätzliche Informationen
-                if (landmarkCount > 0 || confidence > 0f) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        if (landmarkCount > 0) {
-                            InfoChip(
-                                label = "Landmarks",
-                                value = landmarkCount.toString(),
-                                color = Color.Blue
-                            )
-                        }
-                        
-                        if (confidence > 0f) {
-                            InfoChip(
-                                label = "Genauigkeit",
-                                value = "${(confidence * 100).toInt()}%",
-                                color = getConfidenceColor(confidence)
-                            )
-                        }
-                    }
+                // 📊 ERWEITERTE Informationsanzeige - IMMER sichtbar für Debug
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    // Zeige IMMER Landmark-Count (auch wenn 0)
+                    InfoChip(
+                        label = "Landmarks",
+                        value = landmarkCount.toString(),
+                        color = if (landmarkCount > 0) Color.Blue else Color.Gray
+                    )
+                    
+                    // Zeige IMMER Confidence (auch bei 0%)
+                    InfoChip(
+                        label = "AKAZE",
+                        value = "${(confidence * 100).toInt()}%",
+                        color = getConfidenceColor(confidence)
+                    )
+                }
+                
+                // 🔍 ZUSÄTZLICHE DEBUG-INFO: Zeige den besten Match
+                if (landmarkCount > 0) {
+                    Text(
+                        text = "Beste Erkennung: ${(confidence * 100).toInt()}%",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 10.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         }
@@ -286,14 +293,15 @@ data class ARScanStatus(
 }
 
 /**
- * Bestimmt die Farbe basierend auf der Confidence
+ * Bestimmt die Farbe basierend auf der Confidence - AKAZE-optimiert
  */
 private fun getConfidenceColor(confidence: Float): Color {
     return when {
-        confidence >= 0.8f -> Color.Green
-        confidence >= 0.6f -> Color.Yellow
-        confidence >= 0.4f -> Color(0xFFFF9800)
-        else -> Color.Red
+        confidence >= 0.6f -> Color.Green         // Grün: Sehr gut (60%+)
+        confidence >= 0.3f -> Color.Yellow        // Gelb: Gut (30-60%)
+        confidence >= 0.15f -> Color(0xFFFF9800) // Orange: Akzeptabel (15-30%)
+        confidence > 0f -> Color.Red              // Rot: Schwach (1-15%)
+        else -> Color.Gray                        // Grau: Keine Erkennung (0%)
     }
 }
 
