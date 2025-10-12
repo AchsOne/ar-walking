@@ -65,6 +65,9 @@ class RouteViewModel : ViewModel() {
     private val lowConfidenceThreshold = 0.40f
     private val lostTrackingDuration = 10000L // 10 Sekunden
 
+    // Auto-Advance Konfiguration (anpassbar)
+    private var autoAdvanceThreshold = 0.50f // 50% Standard
+
     // Feature Detector - AKAZE für bessere Indoor-Performance
     private var akazeDetector: AKAZE? = null
     private var matcher: DescriptorMatcher? = null
@@ -266,6 +269,50 @@ class RouteViewModel : ViewModel() {
     }
 
     /**
+     * Setzt die Schwelle für automatischen Schrittwechsel (0.0 - 1.0)
+     */
+    fun setAutoAdvanceThreshold(value: Float) {
+        autoAdvanceThreshold = value.coerceIn(0f, 1f)
+        Log.i("RouteViewModel", "🛠 Auto-Advance Threshold gesetzt auf ${(autoAdvanceThreshold * 100).toInt()}%")
+    }
+
+    /**
+     * Überspringt den aktuellen Navigationsschritt manuell:
+     * - Markiert den aktuellen Schritt als gelöscht
+     * - Erhöht den aktuellen Schritt auf den nächsten (falls vorhanden)
+     * - Setzt den Navigationsstatus passend
+     */
+    fun skipCurrentStep() {
+        val route = _currentRoute.value
+        if (route == null) {
+            Log.w("RouteViewModel", "⚠ Kann Schritt nicht überspringen: keine Route geladen")
+            return
+        }
+
+        val current = _currentNavigationStep.value
+        val lastIndex = route.steps.lastIndex
+
+        // Markiere aktuellen Schritt als gelöscht
+        val newDeleted = _deletedSteps.value.toMutableSet()
+        newDeleted.add(current)
+        _deletedSteps.value = newDeleted
+        Log.i("RouteViewModel", "⏭ Schritt $current manuell übersprungen (als gelöscht markiert)")
+
+        // Falls möglich, zum nächsten Schritt springen, sonst Route abschließen
+        if (current < lastIndex) {
+            _currentNavigationStep.value = current + 1
+            _navigationStatus.value = NavigationStatus.STEP_COMPLETED
+            Log.i("RouteViewModel", "➡ Wechsle zu Schritt ${current + 1}")
+        } else {
+            _navigationStatus.value = NavigationStatus.ROUTE_COMPLETED
+            Log.i("RouteViewModel", "🏁 Letzter Schritt übersprungen – Route abgeschlossen")
+        }
+
+        // Detection-Historie zurücksetzen, damit neue Landmark-Erkennung sauber startet
+        landmarkDetectionHistory.clear()
+    }
+
+    /**
      * Loggt die geladene Route
      */
     fun logNavigationRoute(route: NavigationRoute) {
@@ -314,6 +361,26 @@ class RouteViewModel : ViewModel() {
         if (matches.isEmpty()) {
             Log.i("Navigation", "⚠ Keine Matches - handleNoLandmarkDetection")
             handleNoLandmarkDetection()
+            return
+        }
+        
+        // 1) Direkte Regel: Wenn der erwartete Landmark des aktuellen Schritts mit >= 50% erkannt wurde,
+        //    automatisch zum nächsten Schritt springen.
+        val currentStepDirect = _currentNavigationStep.value
+        val expectedIds = getExpectedLandmarksForStep(currentStepDirect).map { it.id }.toSet()
+        val strongExpectedMatch = matches.firstOrNull { it.landmark.id in expectedIds && it.confidence >= autoAdvanceThreshold }
+        val routeSize = _currentRoute.value?.steps?.size ?: 0
+        if (strongExpectedMatch != null && currentStepDirect < routeSize - 1) {
+            Log.i(
+                "Navigation",
+                "✅ Direkter Auto-Sprung: erkannter expected landmark ${strongExpectedMatch.landmark.id} mit ${(strongExpectedMatch.confidence * 100).toInt()}%"
+            )
+            performStepTransition(
+                fromStep = currentStepDirect,
+                toStep = currentStepDirect + 1,
+                trigger = "auto_landmark_${strongExpectedMatch.landmark.id}",
+                confidence = strongExpectedMatch.confidence
+            )
             return
         }
         

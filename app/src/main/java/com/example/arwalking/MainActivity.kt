@@ -69,15 +69,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-
-        if (OpenCVLoader.initDebug()) {
-            Log.d("OpenCV", "OpenCV loaded successfully")
-        }
-
-
         if (OpenCVLoader.initLocal()) {
             Log.d("OpenCV", "OpenCV loaded successfully")
-
+            /*
             // SCHRITT 1: Basis-Test
             val opencvTest = OpenCvTest(this)
             opencvTest.runAllTests()
@@ -105,7 +99,10 @@ class MainActivity : ComponentActivity() {
             // SCHRITT 4: Erweiterte Tests (temporär deaktiviert)
             // TODO: Erweiterte Tests aktivieren nach Bugfix
             Log.i("MainActivity", "🚀 Erweiterte Features verfügbar (Tests deaktiviert)")
+             */
         }
+
+
 
         // ViewModel erstellen
         routeViewModel = ViewModelProvider(this)[RouteViewModel::class.java]

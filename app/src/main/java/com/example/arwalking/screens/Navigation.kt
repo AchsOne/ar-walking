@@ -23,6 +23,7 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import com.example.arwalking.ui.theme.GradientUtils
 import androidx.compose.ui.graphics.Color
@@ -316,7 +318,7 @@ fun ARWalkingUIOverlay(
                 )
         )
 
-        // Top bar with back button and destination text
+        // Top bar with back button and dynamic center text (Landmark-ID if available)
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -340,9 +342,14 @@ fun ARWalkingUIOverlay(
                     .padding(4.dp)
             )
 
-            // Destination text
+            // Compute top-center label: Landmark-ID of current step if present, otherwise destination
+            val currentStepIndexTop by routeViewModel.currentNavigationStep.collectAsState()
+            val currentLandmarkIdTop = currentRoute?.steps?.getOrNull(currentStepIndexTop)?.landmarks?.firstOrNull()?.id
+            val topCenterText = currentLandmarkIdTop ?: actualDestination
+
+            // Center text
             Text(
-                text = destination,
+                text = topCenterText,
                 color = Color.White,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -422,6 +429,13 @@ fun ARWalkingUIOverlay(
                 )
             )
         }
+        // Berechne aktuellen Schritt und Gesamtschritte aus der Route
+        val currentStepNumber by routeViewModel.currentNavigationStep.collectAsState()
+        val totalStepsCount = navigationSteps.size
+        // Sichtbare Schritte so schneiden, dass der aktuelle Schritt an erster Stelle steht
+        val visibleSteps = if (navigationSteps.isNotEmpty()) {
+            navigationSteps.drop(currentStepNumber).ifEmpty { emptyList() }
+        } else emptyList()
 
         // 3D Arrow Overlay (main AR feature)
         val configuration = androidx.compose.ui.platform.LocalConfiguration.current
@@ -430,9 +444,7 @@ fun ARWalkingUIOverlay(
         val screenWidth = with(density) { configuration.screenWidthDp.dp.toPx() }
         val screenHeight = with(density) { configuration.screenHeightDp.dp.toPx() }
         
-        // Berechne aktuellen Schritt und Gesamtschritte aus der Route
-        val currentStepNumber by routeViewModel.currentNavigationStep.collectAsState()
-        val totalStepsCount = navigationSteps.size
+
         /*
         Animated3DArrowOverlay(
             matches = featureMatches,
@@ -483,7 +495,7 @@ fun ARWalkingUIOverlay(
         val deletedSteps by routeViewModel.deletedSteps.collectAsState()
         
         NavigationDrawer(
-            navigationSteps = navigationSteps,
+            navigationSteps = visibleSteps,
             destinationLabel = actualDestination,
             onClose = { /* Close functionality moved to back button */ },
             availableZoomRatios = availableZoomRatios,
@@ -492,6 +504,31 @@ fun ARWalkingUIOverlay(
             modifier = Modifier
                 .align(alignment = Alignment.BottomCenter)
         )
+
+        // Zentraler Skip-Button in der Kameraansicht
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .size(80.dp)
+                .clip(RoundedCornerShape(40.dp))
+                .background(Color.Black.copy(alpha = 0.35f))
+                .border(
+                    width = 2.dp,
+                    color = Color.White.copy(alpha = 0.6f),
+                    shape = RoundedCornerShape(40.dp)
+                )
+                .clickable {
+                    routeViewModel.skipCurrentStep()
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                painter = painterResource(id = R.drawable.arrow_up_1),
+                contentDescription = "Nächsten Schritt überspringen",
+                tint = Color.White,
+                modifier = Modifier.size(36.dp)
+            )
+        }
     }
 }
 
