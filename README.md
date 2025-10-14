@@ -1,4 +1,30 @@
-# 🧭 ArWalking
+# ARWalking
+
+## ARCore Frame Pipeline: Direct Y-Plane (Performance)
+
+This app now processes ARCore camera frames using the Y-Plane (luma) directly from ARCore’s YUV_420_888 images. This avoids the previous NV21 → JPEG → Bitmap conversion, substantially reducing CPU cost, GC pressure, and latency for feature extraction.
+
+- What changed
+  - ARCoreArrowView acquires the Image via frame.acquireCameraImage() and converts the Y plane to an OpenCV Mat (CV_8UC1) without creating a Bitmap.
+  - RouteViewModel exposes processGrayMatForFeatureMatching(grayMat: Mat), which runs the same AKAZE + Hamming matching pipeline as before, but starting from grayscale Mats.
+  - The user-visible camera remains unfiltered; preprocessing is only done off-screen for feature extraction.
+
+- Why this is faster
+  - No JPEG compression/decompression and no Bitmap allocations per frame.
+  - Fewer large heap allocations → fewer GC pauses.
+  - Direct grayscale is ideal for AKAZE and matching.
+
+- Resolution and rate
+  - Frames are downscaled to a practical max dimension (≈1280 px) for a good speed/quality tradeoff.
+  - Processing is throttled (default: every 500 ms) to keep UI responsive and AR tracking stable.
+
+- Fallback
+  - If Y-Plane extraction fails for any reason, the legacy Bitmap path is still available as a fallback.
+
+- How to switch back (if needed)
+  - In ARCoreArrowView.tryAcquireCameraImage, call processFrameForFeatureMatching(bitmap) with the legacy imageToBitmap(image) path and disable the imageToGrayMat(image) branch.
+
+No changes are required to your assets or landmarks; the feature cache and matching logic remain the same.
 
 Eine Android-App für Augmented Reality Navigation.  
 Die App verwendet die Kamera, um Navigationsinformationen in der realen Welt zu überlagern und Benutzer zu ihrem Ziel zu führen.

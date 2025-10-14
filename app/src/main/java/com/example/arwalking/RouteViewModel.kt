@@ -46,6 +46,16 @@ class RouteViewModel : ViewModel() {
 
     private val _isProcessingFrame = MutableStateFlow(false)
     val isProcessingFrame: StateFlow<Boolean> = _isProcessingFrame.asStateFlow()
+
+    // ========== GROUND PROJECTION STATE ==========
+    data class GroundProjectionState(
+        val pitchDeg: Float = 0f, // camera pitch (down/up)
+        val rollDeg: Float = 0f,  // horizon tilt
+        val confidence: Float = 0f
+    )
+    private val _groundProjection = MutableStateFlow(GroundProjectionState())
+    val groundProjection: StateFlow<GroundProjectionState> = _groundProjection.asStateFlow()
+    private var lastGroundProjection: GroundProjectionState? = null
     
     // ========== INTELLIGENTE NAVIGATION STATE ==========
     
@@ -623,17 +633,26 @@ class RouteViewModel : ViewModel() {
             val mat = Mat()
             Utils.bitmapToMat(bitmap, mat)
 
-            // Konvertiere zu Graustufen
+            // Konvertiere zu Graustufen (kanal-bewusst)
             val gray = Mat()
-            Imgproc.cvtColor(mat, gray, Imgproc.COLOR_BGR2GRAY)
+            when (mat.channels()) {
+                4 -> Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGBA2GRAY)
+                3 -> Imgproc.cvtColor(mat, gray, Imgproc.COLOR_BGR2GRAY)
+                else -> mat.copyTo(gray)
+            }
+
+            // Kontrast anheben für robustere Features (landmark & frame konsistent)
+            val grayEq = Mat()
+            Imgproc.equalizeHist(gray, grayEq)
 
             // Extrahiere Features
             val keypoints = MatOfKeyPoint()
             val descriptors = Mat()
-            akazeDetector?.detectAndCompute(gray, Mat(), keypoints, descriptors)
+            akazeDetector?.detectAndCompute(grayEq, Mat(), keypoints, descriptors)
 
             mat.release()
             gray.release()
+            grayEq.release()
 
             if (keypoints.rows() > 0) {
                 LandmarkFeatures(
@@ -652,7 +671,7 @@ class RouteViewModel : ViewModel() {
     }
 
     /**
-     * Verarbeitet einen Kamera-Frame für Feature Matching
+     * Verarbeitet einen Kamera-Frame (Bitmap) für Feature Matching
      */
     fun processFrameForFeatureMatching(bitmap: Bitmap) {
         Log.d("FeatureMapping", "📥 Frame empfangen: ${bitmap.width}x${bitmap.height}")
@@ -735,35 +754,321 @@ class RouteViewModel : ViewModel() {
     }
 
     /**
+     * Verarbeitet einen Kamera-Frame (Graustufen-Mat, direkte Y-Plane) für Feature Matching
+     * Performance-optimierter Pfad ohne JPEG/Bitmap-Konvertierung
+     */
+    fun processGrayMatForFeatureMatching(grayInput: Mat) {
+        Log.d("FeatureMapping", "📥 GrayMat empfangen: ${grayInput.cols()}x${grayInput.rows()}")
+
+        // Early guard against empty/degenerate input
+        if (grayInput.empty() || grayInput.cols() <= 1 || grayInput.rows() <= 1) {
+            Log.w("FeatureMapping", "GrayMat empty or too small: ${grayInput.cols()}x${grayInput.rows()}")
+            return
+        }
+
+        if (!_isFeatureMappingEnabled.value) {
+            Log.w("FeatureMapping", "⚠ Feature Mapping nicht aktiviert")
+            return
+        }
+        if (_isProcessingFrame.value) {
+            Log.d("FeatureMapping", "⏳ Frame wird bereits verarbeitet, überspringe...")
+            return
+        }
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastProcessedTime < frameProcessingInterval) {
+            Log.d("FeatureMapping", "⏱ Frame-Rate Limit (${currentTime - lastProcessedTime}ms), überspringe...")
+            return
+        }
+        frameCounter++
+        lastProcessedTime = currentTime
+        Log.i("FeatureMapping", "🎥 Starte Verarbeitung (Y-Plane) von Frame #$frameCounter")
+
+        viewModelScope.launch(Dispatchers.Default) {
+            _isProcessingFrame.value = true
+            var gray: Mat? = null
+            var grayEq: Mat? = null
+            try {
+                // Clone input immediately to decouple from producer thread
+                gray = grayInput.clone()
+
+                // 1) Crop UI overlays (remove top ~15% and bottom ~25%) with safe clamping
+                val h = gray!!.rows()
+                val w = gray!!.cols()
+                val topCropPct = 0.15f
+                val bottomCropPct = 0.25f
+                val topCrop = (h * topCropPct).toInt().coerceIn(0, h)
+                val bottomCrop = (h * bottomCropPct).toInt().coerceIn(0, h)
+
+                var y = topCrop
+                var heightWanted = h - topCrop - bottomCrop
+                // Ensure minimum ROI height
+                if (heightWanted < 50) heightWanted = (h * 0.7f).toInt().coerceAtLeast(50)
+                // Clamp to image bounds
+                if (y + heightWanted > h) heightWanted = h - y
+                if (y >= h || heightWanted <= 1 || w <= 1) {
+                    Log.w("FeatureMapping", "ROI clamp fallback: h=$h w=$w y=$y heightWanted=$heightWanted")
+                }
+                val yClamped = y.coerceIn(0, (h - 1).coerceAtLeast(0))
+                val roiHeight = (heightWanted).coerceIn(1, h - yClamped)
+
+                var work: Mat = try {
+                    // If ROI would be degenerate, skip cropping and use original
+                    if (w <= 1 || roiHeight <= 1) {
+                        gray!!
+                    } else {
+                        val roi = org.opencv.core.Rect(0, yClamped, w, roiHeight)
+                        gray!!.submat(roi)
+                    }
+                } catch (e: Exception) {
+                    Log.w("FeatureMapping", "ROI submat failed (${e.message}), using original gray")
+                    gray!!
+                }
+
+                // 2) Downscale to maxDim for speed
+                val maxDim = 1280
+                if (maxOf(work.cols(), work.rows()) > maxDim) {
+                    val scale = maxDim.toDouble() / maxOf(work.cols(), work.rows()).toDouble()
+                    val newW = (work.cols() * scale).toInt().coerceAtLeast(320)
+                    val newH = (work.rows() * scale).toInt().coerceAtLeast(240)
+                    val resized = Mat()
+                    Imgproc.resize(work, resized, Size(newW.toDouble(), newH.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+                    if (work !== gray) work.release()
+                    work = resized
+                }
+
+                // 3) Histogram equalization for robust features
+                grayEq = Mat()
+                Imgproc.equalizeHist(work, grayEq)
+                if (work !== gray) work.release()
+
+                if (grayEq.empty() || grayEq.cols() <= 1 || grayEq.rows() <= 1) {
+                    Log.w("FeatureMapping", "Equalized frame is empty or too small: ${grayEq.cols()}x${grayEq.rows()}")
+                    _currentMatches.value = emptyList()
+                    return@launch
+                }
+
+                // 4) Extract features
+                val keypoints = MatOfKeyPoint()
+                val descriptors = Mat()
+                if (akazeDetector == null) {
+                    Log.e("FeatureMapping", "❌ AKAZE Detector ist null!")
+                    keypoints.release(); descriptors.release()
+                    _currentMatches.value = emptyList()
+                } else {
+                    akazeDetector?.detectAndCompute(grayEq, Mat(), keypoints, descriptors)
+                    Log.d("FeatureMapping", "🔍 Feature-Extraktion (Y): ${keypoints.rows()} keypoints, ${descriptors.rows()} descriptors")
+
+                    if (keypoints.rows() > 0) {
+                        val frameFeatures = LandmarkFeatures(
+                            id = "frame",
+                            keypoints = keypoints,
+                            descriptors = descriptors
+                        )
+                        val matches = matchAgainstLandmarks(frameFeatures)
+                        _currentMatches.value = matches
+                        try { analyzeStepProgression(matches) } catch (e: Exception) { Log.e("Navigation", "Analyse Fehler: ${e.message}", e) }
+                    } else {
+                        keypoints.release(); descriptors.release()
+                        _currentMatches.value = emptyList()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("FeatureMapping", "❌ Fehler bei GrayMat-Verarbeitung: ${e.message}", e)
+                _currentMatches.value = emptyList()
+            } finally {
+                try { grayEq?.release() } catch (_: Exception) {}
+                try { gray?.release() } catch (_: Exception) {}
+                _isProcessingFrame.value = false
+            }
+        }
+    }
+
+    /**
+     * Schätzt Bodenprojektion (Pitch/Roll) aus einem Kamera-Frame
+     * - Roll: Median der Linienwinkel (Hough) nahe horizontal
+     * - Pitch: Einfache Heuristik: Kantenverteilung unten vs. oben im Bild
+     */
+    fun updateGroundProjectionEstimate(bitmap: Bitmap) {
+        viewModelScope.launch(Dispatchers.Default) {
+            try {
+                val src = Mat()
+                Utils.bitmapToMat(bitmap, src)
+
+                // Graustufen
+                val gray = Mat()
+                when (src.channels()) {
+                    4 -> Imgproc.cvtColor(src, gray, Imgproc.COLOR_RGBA2GRAY)
+                    3 -> Imgproc.cvtColor(src, gray, Imgproc.COLOR_BGR2GRAY)
+                    else -> src.copyTo(gray)
+                }
+
+                // Blur + Kanten
+                val blurred = Mat()
+                Imgproc.GaussianBlur(gray, blurred, Size(5.0, 5.0), 0.0)
+                val edges = Mat()
+                Imgproc.Canny(blurred, edges, 50.0, 150.0)
+
+                // Hough Lines (probabilistic)
+                val lines = Mat()
+                Imgproc.HoughLinesP(
+                    edges,
+                    lines,
+                    1.0,
+                    Math.PI / 180.0,
+                    60,
+                    (src.width() * 0.25).toInt().toDouble(),
+                    20.0
+                )
+
+                val angles = mutableListOf<Double>()
+                for (i in 0 until lines.rows()) {
+                    val l = lines.get(i, 0)
+                    if (l != null && l.size >= 4) {
+                        val x1 = l[0]
+                        val y1 = l[1]
+                        val x2 = l[2]
+                        val y2 = l[3]
+                        val angleRad = Math.atan2((y2 - y1), (x2 - x1))
+                        var deg = Math.toDegrees(angleRad)
+                        // Normalisiere auf [-90, 90]
+                        if (deg > 90) deg -= 180
+                        if (deg < -90) deg += 180
+                        // Nur nahezu horizontale Linien für Roll berücksichtigen
+                        if (kotlin.math.abs(deg) <= 30.0) {
+                            angles.add(deg)
+                        }
+                    }
+                }
+
+                // Roll = Median der horizontalen Linienwinkel
+                val rollDeg = if (angles.isNotEmpty()) {
+                    val sorted = angles.sorted()
+                    val mid = sorted.size / 2
+                    if (sorted.size % 2 == 0)
+                        ((sorted[mid - 1] + sorted[mid]) / 2.0).toFloat()
+                    else sorted[mid].toFloat()
+                } else 0f
+
+                // Pitch Heuristik: Kanten unten vs. oben
+                val h = edges.rows()
+                val w = edges.cols()
+                var topCount = 0
+                var bottomCount = 0
+                for (y in 0 until h) {
+                    val row = ByteArray(w)
+                    edges.get(y, 0, row)
+                    val count = row.count { (it.toInt() and 0xFF) > 0 }
+                    if (y < h / 2) topCount += count else bottomCount += count
+                }
+                val total = topCount + bottomCount
+                val pitchDeg = if (total > 0) {
+                    val bias = (bottomCount - topCount).toFloat() / total.toFloat() // [-1,1]
+                    // Map to ~[-25°, +25°]
+                    (bias * 25f)
+                } else 0f
+
+                // Confidence: Kombination aus Linienanzahl und Edgedichte
+                val lineScore = (angles.size / 12f).coerceIn(0f, 1f)
+                val edgeScore = (total / (w * h / 24f)).coerceIn(0f, 1f)
+                val confidence = (lineScore * 0.6f + edgeScore * 0.4f).coerceIn(0f, 1f)
+
+                // Exponentielle Glättung zur Beruhigung (reduziert Wackeln)
+                val prev = lastGroundProjection ?: GroundProjectionState()
+                val baseAlpha = 0.25f
+                val alpha = (baseAlpha + 0.5f * confidence).coerceIn(0.15f, 0.6f)
+                val smoothedPitch = prev.pitchDeg + (pitchDeg - prev.pitchDeg) * alpha
+                val smoothedRoll = prev.rollDeg + (rollDeg - prev.rollDeg) * alpha
+                val smoothedConf = (prev.confidence + confidence) / 2f
+
+                val smoothed = GroundProjectionState(
+                    pitchDeg = smoothedPitch,
+                    rollDeg = smoothedRoll,
+                    confidence = smoothedConf
+                )
+                _groundProjection.value = smoothed
+                lastGroundProjection = smoothed
+
+                // Cleanup
+                lines.release()
+                edges.release()
+                blurred.release()
+                gray.release()
+                src.release()
+            } catch (e: Exception) {
+                Log.e("GroundProj", "Fehler bei Bodenprojektion: ${e.message}", e)
+            }
+        }
+    }
+
+    /**
      * Extrahiert Features aus einem Kamera-Frame
      */
     private fun extractFrameFeatures(bitmap: Bitmap): LandmarkFeatures? {
         return try {
             Log.d("FeatureMapping", "🖼 Bitmap: ${bitmap.width}x${bitmap.height}, config: ${bitmap.config}")
-            
+
+            // 1) Crop UI overlays (remove top ~15% and bottom ~25%) to avoid overlay artifacts
+            val h = bitmap.height
+            val w = bitmap.width
+            val topCrop = (h * 0.15f).toInt()
+            val bottomCrop = (h * 0.25f).toInt()
+            val croppedH = (h - topCrop - bottomCrop).coerceAtLeast(100)
+            val effectiveTop = topCrop.coerceAtLeast(0).coerceAtMost(h - 100)
+            val srcBitmap = try {
+                if (croppedH != h) Bitmap.createBitmap(bitmap, 0, effectiveTop, w, croppedH) else bitmap
+            } catch (e: Exception) {
+                Log.w("FeatureMapping", "Crop failed, using original frame: ${e.message}")
+                bitmap
+            }
+
+            // 2) Downscale very large frames to <= 1280px max dimension for speed and stability
+            val maxDim = 1280
+            val scaledBitmap = if (maxOf(srcBitmap.width, srcBitmap.height) > maxDim) {
+                val scale = maxDim.toFloat() / maxOf(srcBitmap.width, srcBitmap.height).toFloat()
+                val newW = (srcBitmap.width * scale).toInt().coerceAtLeast(320)
+                val newH = (srcBitmap.height * scale).toInt().coerceAtLeast(240)
+                try {
+                    Bitmap.createScaledBitmap(srcBitmap, newW, newH, true)
+                } catch (e: Exception) {
+                    Log.w("FeatureMapping", "Scale failed, using cropped/original frame: ${e.message}")
+                    srcBitmap
+                }
+            } else srcBitmap
+
             val mat = Mat()
-            Utils.bitmapToMat(bitmap, mat)
+            Utils.bitmapToMat(scaledBitmap, mat)
             Log.d("FeatureMapping", "📐 Mat erstellt: ${mat.rows()}x${mat.cols()} channels: ${mat.channels()}")
 
-            // Konvertiere zu Graustufen
+            // 3) Convert to grayscale and equalize histogram for better features
             val gray = Mat()
-            Imgproc.cvtColor(mat, gray, Imgproc.COLOR_BGR2GRAY)
-            Log.d("FeatureMapping", "🔘 Graustufen-Konvertierung abgeschlossen: ${gray.rows()}x${gray.cols()}")
+            when (mat.channels()) {
+                4 -> Imgproc.cvtColor(mat, gray, Imgproc.COLOR_RGBA2GRAY)
+                3 -> Imgproc.cvtColor(mat, gray, Imgproc.COLOR_BGR2GRAY)
+                else -> mat.copyTo(gray)
+            }
+            val grayEq = Mat()
+            Imgproc.equalizeHist(gray, grayEq)
+            Log.d("FeatureMapping", "🔘 Graustufen+Equalize: ${grayEq.rows()}x${grayEq.cols()} (ch=${mat.channels()})")
 
-            // Extrahiere Features
+            // 4) Extract features
             val keypoints = MatOfKeyPoint()
             val descriptors = Mat()
-            
+
             if (akazeDetector == null) {
                 Log.e("FeatureMapping", "❌ AKAZE Detector ist null!")
+                if (scaledBitmap !== bitmap && !scaledBitmap.isRecycled) scaledBitmap.recycle()
+                if (srcBitmap !== bitmap && !srcBitmap.isRecycled) srcBitmap.recycle()
                 return null
             }
-            
-            akazeDetector?.detectAndCompute(gray, Mat(), keypoints, descriptors)
+
+            akazeDetector?.detectAndCompute(grayEq, Mat(), keypoints, descriptors)
             Log.d("FeatureMapping", "🔍 Feature-Extraktion: ${keypoints.rows()} keypoints, ${descriptors.rows()} descriptors")
 
             mat.release()
             gray.release()
+            grayEq.release()
+            if (scaledBitmap !== bitmap && !scaledBitmap.isRecycled) scaledBitmap.recycle()
+            if (srcBitmap !== bitmap && !srcBitmap.isRecycled) srcBitmap.recycle()
 
             if (keypoints.rows() > 0) {
                 Log.i("FeatureMapping", "✅ Frame Features erfolgreich: ${keypoints.rows()} keypoints")
@@ -800,16 +1105,17 @@ class RouteViewModel : ViewModel() {
                 if (landmarkFeatures != null) {
                     val matchResult = matchFeatures(frameFeatures, landmarkFeatures)
 
-                    // 🎯 AKAZE-OPTIMIERTE SCHWELLEN für bessere Qualität
-                    val minMatches = 3      // AKAZE: Höhere Schwelle da bessere Feature-Qualität
-                    val minConfidence = 0.15f  // 15% Mindest-Confidence für AKAZE
-                    
-                    if (matchResult.matchCount >= minMatches && matchResult.confidence >= minConfidence) {
-                        matches.add(matchResult)
-                        Log.d("FeatureMapping", "🎯 Match gefunden: ${matchResult.landmark.name} - ${matchResult.matchCount} matches, ${(matchResult.confidence * 100).toInt()}% confidence")
-                    } else {
-                        Log.i("FeatureMapping", "🚫 Schwacher Match ignoriert: ${matchResult.landmark.name ?: "null"} - ${matchResult.matchCount} matches, ${(matchResult.confidence * 100).toInt()}% confidence")
-                    }
+                // 🎯 AKAZE-OPTIMIERTE Schwellen für bessere Qualität - GELOCKERT für schwache Kameras
+                val minMatches = 2      // Reduziert von 3 auf 2 für schwache Feature-Erkennung
+                val minConfidence = 0.05f  // Reduziert von 15% auf 5% für bessere Erkennungsrate
+                if (matchResult.matchCount >= minMatches && matchResult.confidence >= minConfidence) {
+                    matches.add(matchResult)
+                    Log.d("FeatureMapping", "🎯 Match gefunden: " + (matchResult.landmark.name ?: matchResult.landmark.id) +
+                            " - " + matchResult.matchCount + " matches, " + ((matchResult.confidence * 100).toInt()) + "% confidence")
+                } else {
+                    Log.i("FeatureMapping", "🚫 Schwacher Match ignoriert: " + (matchResult.landmark.name ?: matchResult.landmark.id) +
+                            " - " + matchResult.matchCount + " matches, " + ((matchResult.confidence * 100).toInt()) + "% confidence")
+                }
                 }
             }
 

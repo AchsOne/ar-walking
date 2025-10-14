@@ -34,11 +34,12 @@ fun ARInfoIsland(
     modifier: Modifier = Modifier,
     isVisible: Boolean = true
 ) {
-    if (!isVisible) return
+    // Always visible when camera is active - ignore isVisible parameter
+    // if (!isVisible) return
     
-    // Animation für das Ein-/Ausblenden
+    // Animation für das Ein-/Ausblenden - immer sichtbar
     val alpha by animateFloatAsState(
-        targetValue = if (isVisible) 0.85f else 0f,
+        targetValue = 0.85f, // Immer sichtbar
         animationSpec = tween(durationMillis = 300),
         label = "island_alpha"
     )
@@ -119,10 +120,11 @@ fun ExpandedARInfoIsland(
     modifier: Modifier = Modifier,
     isVisible: Boolean = true
 ) {
-    if (!isVisible) return
+    // Always visible when camera is active - ignore isVisible parameter
+    // if (!isVisible) return
     
     val alpha by animateFloatAsState(
-        targetValue = if (isVisible) 0.85f else 0f,
+        targetValue = 0.85f, // Immer sichtbar
         animationSpec = tween(durationMillis = 300),
         label = "expanded_island_alpha"
     )

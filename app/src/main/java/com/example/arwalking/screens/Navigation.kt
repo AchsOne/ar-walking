@@ -63,6 +63,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
@@ -73,7 +74,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.arwalking.R
 import com.example.arwalking.RouteViewModel
-import com.example.arwalking.components.Animated3DArrowOverlay
 import com.example.arwalking.components.ExpandedARInfoIsland
 import com.example.arwalking.components.FeatureMappingStatusIndicator
 import com.example.arwalking.components.FeatureMatchOverlay
@@ -157,14 +157,13 @@ fun CameraScreen(
     }
     var showRationaleDialog by remember { mutableStateOf(false) }
 
-    // Zoom state management
-    var currentZoomRatio by remember { mutableStateOf(1.0f) }
-    var availableZoomRatios by remember { mutableStateOf(listOf(0.7f, 1.0f, 2.0f)) }
+    // Zoom removed per user request
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         hasPermission = granted
+        Log.d("Perm", "CAMERA permission granted=$granted")
     }
 
     LaunchedEffect(hasPermission) {
@@ -184,34 +183,40 @@ fun CameraScreen(
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         if (hasPermission) {
-            // Live-Kameravorschau
-            CameraPreviewView(
+            Log.d("ARCoreArrow", "Composable active, hasPerm=$hasPermission")
+            // ARCore gesteuerte Kamera + Ground Anchor Arrow
+            var debugText by remember { mutableStateOf("") }
+
+            com.example.arwalking.ar.ARCoreArrowView(
+                routeViewModel = routeViewModel,
+                isEnabled = true,
+                hasCameraPermission = hasPermission,
                 modifier = Modifier.fillMaxSize(),
-                lifecycleOwner = lifecycleOwner,
-                zoomRatio = currentZoomRatio,
-                onAvailableZoomRatiosChanged = { ratios ->
-                    availableZoomRatios = ratios
-                },
-                onFrameProcessed = { bitmap ->
-                    // Frame für Feature Mapping verarbeiten
-                    try {
-                        routeViewModel.processFrameForFeatureMatching(bitmap)  // ✅ Direkt Bitmap übergeben!
-                    } catch (e: Exception) {
-                        Log.e("CameraScreen", "Error processing frame for feature matching", e)
-                    }
-                }
+                onDebugUpdate = { txt -> debugText = txt }
             )
+
+            // Small debug HUD (top-left)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = 8.dp, start = 8.dp)
+                    .zIndex(100f)
+                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = debugText,
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    maxLines = 3
+                )
+            }
 
             // AR Walking UI Overlay
             ARWalkingUIOverlay(
                 mainNavController = mainNavController,
                 destination = actualDestination,
                 startLocation = actualStartLocation,
-                availableZoomRatios = availableZoomRatios,
-                currentZoomRatio = currentZoomRatio,
-                onZoomChange = { newZoomRatio ->
-                    currentZoomRatio = newZoomRatio
-                },
                 routeViewModel = routeViewModel
             )
 
@@ -257,9 +262,6 @@ fun ARWalkingUIOverlay(
     mainNavController: NavController,
     destination: String = "Unbekanntes Ziel",
     startLocation: String = "Unbekannter Start",
-    availableZoomRatios: List<Float> = listOf(0.7f, 1.0f, 2.0f),
-    currentZoomRatio: Float = 1.0f,
-    onZoomChange: (Float) -> Unit = {},
     routeViewModel: RouteViewModel
 ) {
     val context = LocalContext.current
@@ -282,6 +284,30 @@ fun ARWalkingUIOverlay(
     val featureMatches by routeViewModel.currentMatches.collectAsState()
     val isFeatureMappingEnabled by routeViewModel.isFeatureMappingEnabled.collectAsState()
     val availableLandmarks = routeViewModel.getAvailableLandmarks()
+
+    // Map LandmarkMatch -> FeatureMatchResult for overlay components
+    val featureMatchesOverlay = remember(featureMatches) {
+        featureMatches.map { m ->
+            // Safeguard against null names coming from parsed JSON
+            val safeName = runCatching { m.landmark.name }.getOrNull()?.takeIf { it.isNotBlank() } ?: m.landmark.id
+            com.example.arwalking.FeatureMatchResult(
+                landmark = com.example.arwalking.FeatureLandmark(
+                    id = m.landmark.id,
+                    name = safeName,
+                    description = "",
+                    position = com.example.arwalking.Position(0.0, 0.0, 0.0),
+                    imageUrl = "",
+                    localImagePath = null,
+                    featureDescriptors = null,
+                    keypoints = null,
+                    confidence = m.confidence
+                ),
+                matchCount = m.matchCount,
+                confidence = m.confidence,
+                distance = m.distance
+            )
+        }
+    }
 
 
 
@@ -315,6 +341,8 @@ fun ARWalkingUIOverlay(
                     )
                 )
         )
+
+        // 3D Arrow is drawn by ARCore view beneath; no 2D overlay here
 
         // Top bar with back button and destination text
         Box(
@@ -462,11 +490,15 @@ fun ARWalkingUIOverlay(
                 .padding(top = 110.dp, end = 16.dp)
         )
 
+        // FeatureMatchOverlay AUSBLENDEN: soll nicht mehr alle erkannten Landmarks anzeigen
+        // (entfernt auf Nutzerwunsch)
+
         // 🎯 AR Info Island - GARANTIERT SICHTBAR für Debug
         ARInfoIslandOverlay(
             routeViewModel = routeViewModel,
             modifier = Modifier
                 .align(Alignment.TopCenter)
+                .zIndex(10f)
                 .padding(horizontal = 16.dp)
                 .offset(y = 140.dp)
         )
@@ -481,14 +513,11 @@ fun ARWalkingUIOverlay(
         val currentStepIndex by routeViewModel.currentNavigationStep.collectAsState()
         val completedSteps by routeViewModel.completedSteps.collectAsState()
         val deletedSteps by routeViewModel.deletedSteps.collectAsState()
-        
+
         NavigationDrawer(
             navigationSteps = navigationSteps,
             destinationLabel = actualDestination,
             onClose = { /* Close functionality moved to back button */ },
-            availableZoomRatios = availableZoomRatios,
-            currentZoomRatio = currentZoomRatio,
-            onZoomChange = onZoomChange,
             modifier = Modifier
                 .align(alignment = Alignment.BottomCenter)
         )
@@ -532,6 +561,16 @@ fun CameraPreviewView(
     var cameraError by remember { mutableStateOf<String?>(null) }
     var camera by remember { mutableStateOf<Camera?>(null) }
 
+    // Use a dedicated background executor for image analysis to avoid blocking the UI thread
+    val analysisExecutor = remember {
+        java.util.concurrent.Executors.newSingleThreadExecutor()
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            analysisExecutor.shutdown()
+        }
+    }
+
     LaunchedEffect(zoomRatio) {
         camera?.let { cam ->
             try {
@@ -565,6 +604,8 @@ fun CameraPreviewView(
         modifier = modifier,
         factory = { ctx ->
             PreviewView(ctx).apply {
+                implementationMode = PreviewView.ImplementationMode.PERFORMANCE
+                scaleType = PreviewView.ScaleType.FILL_CENTER
                 try {
                     val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
                     cameraProviderFuture.addListener({
@@ -590,7 +631,7 @@ fun CameraPreviewView(
                                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                                     .build()
                                     .also { analysis ->
-                                        analysis.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { imageProxy ->
+                                        analysis.setAnalyzer(analysisExecutor) { imageProxy ->
                                             try {
                                                 val bitmap = imageProxyToBitmap(imageProxy)
                                                 if (bitmap != null) {
@@ -646,16 +687,16 @@ private fun yuv420ToNv21(imageProxy: ImageProxy): ByteArray {
     val yPlane = imageProxy.planes[0]
     val uPlane = imageProxy.planes[1]
     val vPlane = imageProxy.planes[2]
-    
+
     val ySize = yPlane.buffer.remaining()
     val uSize = uPlane.buffer.remaining()
     val vSize = vPlane.buffer.remaining()
-    
+
     val nv21 = ByteArray(ySize + uSize + vSize)
-    
+
     // Y Plane
     yPlane.buffer.get(nv21, 0, ySize)
-    
+
     val uvPixelStride = uPlane.pixelStride
     if (uvPixelStride == 1) {
         // UV Planes are packed together
@@ -666,7 +707,7 @@ private fun yuv420ToNv21(imageProxy: ImageProxy): ByteArray {
         val uvBuffer = ByteArray(uSize + vSize)
         uPlane.buffer.get(uvBuffer, 0, uSize)
         vPlane.buffer.get(uvBuffer, uSize, vSize)
-        
+
         // Interleave V and U for NV21 format (VUVU...)
         var uvIndex = 0
         for (i in 0 until uSize) {
@@ -675,17 +716,17 @@ private fun yuv420ToNv21(imageProxy: ImageProxy): ByteArray {
             uvIndex += 2
         }
     }
-    
+
     return nv21
 }
 
 private fun rotateBitmapIfNeeded(bitmap: Bitmap, rotationDegrees: Int): Bitmap {
     if (rotationDegrees == 0) return bitmap
-    
+
     val matrix = Matrix().apply {
         postRotate(rotationDegrees.toFloat())
     }
-    
+
     return try {
         val rotatedBitmap = Bitmap.createBitmap(
             bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
@@ -780,19 +821,19 @@ private fun ARInfoIslandOverlay(
 ) {
     val matches by routeViewModel.currentMatches.collectAsState()
     val isFeatureMappingEnabled by routeViewModel.isFeatureMappingEnabled.collectAsState()
-    
+
     val landmarkCount = matches.size
     val bestConfidence = matches.maxOfOrNull { match -> match.confidence } ?: 0f
     val isTracking = matches.isNotEmpty()
-    
-    // 🔍 DEBUG: Logge UI-Werte für bessere Diagnose
+
+    // 🔍 DEBUG: Logs für matches
     LaunchedEffect(matches, isFeatureMappingEnabled) {
         Log.d("ARInfoIsland", "📱 UI Update: enabled=$isFeatureMappingEnabled, matches=${matches.size}, bestConf=${(bestConfidence * 100).toInt()}%")
         matches.forEachIndexed { index, match ->
             Log.d("ARInfoIsland", "  🎯 Match $index: ${match.landmark.name ?: "unnamed"} - ${(match.confidence * 100).toInt()}%")
         }
     }
-    
+
     // Automatischer AR-Status basierend auf aktuellen Bedingungen
     val arStatus = rememberARScanStatus(
         isInitialized = isFeatureMappingEnabled,
@@ -800,13 +841,13 @@ private fun ARInfoIslandOverlay(
         bestConfidence = bestConfidence,
         isTracking = isTracking
     )
-    
-    // Verwende die erweiterte ARInfoIsland mit mehr Informationen
+
+    // AR Info Island UI danach, damit sie oberhalb liegt
     ExpandedARInfoIsland(
         scanStatus = arStatus,
         landmarkCount = landmarkCount,
         confidence = bestConfidence,
         modifier = modifier,
-        isVisible = isFeatureMappingEnabled
+        isVisible = true
     )
 }

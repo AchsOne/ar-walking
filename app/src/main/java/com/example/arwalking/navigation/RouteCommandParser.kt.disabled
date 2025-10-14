@@ -1,0 +1,362 @@
+package com.example.arwalking.navigation
+
+import android.util.Log
+import com.example.arwalking.ar.RouteDirection
+import com.google.gson.Gson
+import com.google.gson.JsonObject
+import kotlin.math.*
+
+/**
+ * Routenbefehl-Parser für präzise 3D-Pfeil-Richtungen
+ * 
+ * Analysiert die route.json und bestimmt exakte Pfeil-Richtungen basierend auf:
+ * - Textuelle Anweisungen ("Biegen Sie links ab", "Gehen Sie durch die Tür")
+ * - Geometrische Analyse der Wegpunkte (dx, dy Koordinaten)
+ * - Landmark-Kontext (Türen, Aufzüge, Treppen)
+ */
+class RouteCommandParser {
+    
+    companion object {
+        private const val TAG = "RouteCommandParser"
+        
+        // Schwellenwerte für geometrische Richtungsbestimmung
+        private const val ANGLE_TOLERANCE = 15.0 // Grad
+        private const val MIN_DISTANCE_FOR_DIRECTION = 5.0 // Pixel-Einheiten
+    }
+    
+    /**
+     * Analysiert einen Routenschritt und bestimmt die optimale Pfeil-Richtung
+     */
+    fun parseRouteStep(
+        routeStepJson: JsonObject,
+        currentStepIndex: Int = 0,
+        totalSteps: Int = 1
+    ): RouteCommandResult {
+        
+        try {
+            // Extrahiere Basis-Informationen
+            val instruction = routeStepJson.get("instruction")?.asString ?: ""
+            val instructionEn = routeStepJson.get("instructionEn")?.asString ?: ""
+            val iconId = routeStepJson.get("iconID")?.asString ?: "default"
+            
+            // Analysiere Landmarks
+            val landmarks = parseLandmarks(routeStepJson)
+            
+            // Analysiere Wegpunkte für geometrische Richtung
+            val geometricDirection = analyzeGeometricDirection(routeStepJson)
+            
+            // Analysiere textuelle Anweisung
+            val textualDirection = analyzeTextualInstruction(instruction, instructionEn)
+            
+            // Bestimme finale Richtung mit Prioritäten
+            val finalDirection = determineOptimalDirection(
+                textualDirection = textualDirection,
+                geometricDirection = geometricDirection,
+                landmarks = landmarks,
+                stepIndex = currentStepIndex,
+                totalSteps = totalSteps
+            )
+            
+            // Berechne Confidence basierend auf Übereinstimmung
+            val confidence = calculateDirectionConfidence(
+                textualDirection, geometricDirection, landmarks
+            )
+            
+            Log.d(TAG, "Routenschritt analysiert: '$instruction' -> $finalDirection (Confidence: $confidence)")
+            
+            return RouteCommandResult(
+                direction = finalDirection,
+                confidence = confidence,
+                instruction = instruction,
+                landmarks = landmarks,
+                geometricAngle = geometricDirection.angle,
+                textualDirection = textualDirection
+            )
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler beim Parsen des Routenschritts", e)
+            return RouteCommandResult(
+                direction = RouteDirection.STRAIGHT,
+                confidence = 0.5f,
+                instruction = "Unbekannt",
+                landmarks = emptyList(),
+                geometricAngle = 0f,
+                textualDirection = RouteDirection.STRAIGHT
+            )
+        }
+    }
+    
+    /**
+     * Analysiert die Wegpunkte für geometrische Richtungsbestimmung
+     */
+    private fun analyzeGeometricDirection(routeStepJson: JsonObject): RouteDirection {
+        val nodesArray = routeStepJson.getAsJsonArray("nodes") ?: return RouteDirection.STRAIGHT
+        
+        if (nodesArray.size() < 2) return RouteDirection.STRAIGHT
+        
+        try {
+            // Extrahiere Start- und Endpunkt
+            val startNode = nodesArray[0].asJsonObject.getAsJsonObject("node")
+            val endNode = nodesArray[nodesArray.size() - 1].asJsonObject.getAsJsonObject("node")
+            
+            val startX = startNode.get("x")?.asDouble ?: 0.0
+            val startY = startNode.get("y")?.asDouble ?: 0.0
+            val endX = endNode.get("x")?.asDouble ?: 0.0
+            val endY = endNode.get("y")?.asDouble ?: 0.0
+            
+            // Berechne Bewegungsvektor
+            val deltaX = endX - startX
+            val deltaY = endY - startY
+            val distance = sqrt(deltaX * deltaX + deltaY * deltaY)
+            
+            if (distance < MIN_DISTANCE_FOR_DIRECTION) {
+                return RouteDirection.STRAIGHT
+            }
+            
+            // Berechne Winkel (0° = Norden, 90° = Osten)
+            val angleRad = atan2(deltaX, -deltaY) // Negative deltaY wegen Bildschirm-Koordinaten
+            val angleDeg = Math.toDegrees(angleRad).let { angle ->
+                if (angle < 0) angle + 360 else angle
+            }
+            
+            // Konvertiere zu RouteDirection
+            return when {
+                angleDeg >= 315 || angleDeg < 45 -> RouteDirection.STRAIGHT // Nord
+                angleDeg >= 45 && angleDeg < 135 -> RouteDirection.RIGHT    // Ost
+                angleDeg >= 135 && angleDeg < 225 -> RouteDirection.BACK    // Süd
+                angleDeg >= 225 && angleDeg < 315 -> RouteDirection.LEFT    // West
+                else -> RouteDirection.STRAIGHT
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler bei geometrischer Richtungsanalyse", e)
+            return RouteDirection.STRAIGHT
+        }
+    }
+    
+    /**
+     * Analysiert textuelle Anweisungen für Richtungsbestimmung
+     */
+    private fun analyzeTextualInstruction(instruction: String, instructionEn: String): RouteDirection {
+        val combinedText = "$instruction $instructionEn".lowercase()
+        
+        return when {
+            // Explizite Richtungsanweisungen
+            containsAny(combinedText, listOf("biegen sie links", "turn left", "nach links")) -> 
+                RouteDirection.LEFT
+                
+            containsAny(combinedText, listOf("biegen sie rechts", "turn right", "nach rechts")) -> 
+                RouteDirection.RIGHT
+                
+            // Spezielle Aktionen
+            containsAny(combinedText, listOf("durch die tür", "go through", "doorway", "betreten")) -> 
+                RouteDirection.STRAIGHT
+                
+            containsAny(combinedText, listOf("verlassen sie", "leave the", "exit")) -> 
+                RouteDirection.STRAIGHT
+                
+            containsAny(combinedText, listOf("treppe", "stairs", "nach oben", "upstairs")) -> 
+                RouteDirection.UP
+                
+            containsAny(combinedText, listOf("nach unten", "downstairs", "basement")) -> 
+                RouteDirection.DOWN
+                
+            containsAny(combinedText, listOf("aufzug", "elevator", "lift")) -> 
+                RouteDirection.STRAIGHT
+                
+            containsAny(combinedText, listOf("geradeaus", "straight", "continue", "follow")) -> 
+                RouteDirection.STRAIGHT
+                
+            // Spezielle Kontexte
+            containsAny(combinedText, listOf("vorbei", "pass", "passieren")) -> 
+                RouteDirection.STRAIGHT
+                
+            containsAny(combinedText, listOf("ihr ziel", "destination", "angekommen")) -> 
+                RouteDirection.STRAIGHT
+                
+            else -> RouteDirection.STRAIGHT // Standard
+        }
+    }
+    
+    /**
+     * Hilfsfunktion für String-Matching
+     */
+    private fun containsAny(text: String, patterns: List<String>): Boolean {
+        return patterns.any { text.contains(it) }
+    }
+    
+    /**
+     * Extrahiert Landmarks aus dem Routenschritt
+     */
+    private fun parseLandmarks(routeStepJson: JsonObject): List<ParsedLandmark> {
+        val landmarksArray = routeStepJson.getAsJsonArray("landmarks") ?: return emptyList()
+        
+        return landmarksArray.mapNotNull { landmarkElement ->
+            try {
+                val landmarkObj = landmarkElement.asJsonObject
+                val nameDe = landmarkObj.get("nameDe")?.asString ?: ""
+                val nameEn = landmarkObj.get("nameEn")?.asString ?: ""
+                val type = landmarkObj.get("type")?.asString ?: ""
+                val id = landmarkObj.get("id")?.asString ?: ""
+                val x = landmarkObj.get("x")?.asDouble ?: 0.0
+                val y = landmarkObj.get("y")?.asDouble ?: 0.0
+                
+                ParsedLandmark(
+                    id = id,
+                    nameDe = nameDe,
+                    nameEn = nameEn,
+                    type = type,
+                    x = x,
+                    y = y
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Fehler beim Parsen eines Landmarks", e)
+                null
+            }
+        }
+    }
+    
+    /**
+     * Bestimmt die optimale Richtung durch Kombinieren verschiedener Analysen
+     */
+    private fun determineOptimalDirection(
+        textualDirection: RouteDirection,
+        geometricDirection: RouteDirection,
+        landmarks: List<ParsedLandmark>,
+        stepIndex: Int,
+        totalSteps: Int
+    ): RouteDirection {
+        
+        // Priorität 1: Explizite textuelle Richtungen (außer STRAIGHT)
+        if (textualDirection != RouteDirection.STRAIGHT) {
+            return textualDirection
+        }
+        
+        // Priorität 2: Landmark-Kontext
+        val landmarkDirection = determineLandmarkDirection(landmarks)
+        if (landmarkDirection != null) {
+            return landmarkDirection
+        }
+        
+        // Priorität 3: Geometrische Richtung (bei signifikanter Bewegung)
+        if (geometricDirection != RouteDirection.STRAIGHT) {
+            return geometricDirection
+        }
+        
+        // Priorität 4: Textuelle Richtung (auch STRAIGHT)
+        return textualDirection
+    }
+    
+    /**
+     * Bestimmt Richtung basierend auf Landmark-Kontext
+     */
+    private fun determineLandmarkDirection(landmarks: List<ParsedLandmark>): RouteDirection? {
+        return landmarks.firstNotNullOfOrNull { landmark ->
+            when (landmark.type.lowercase()) {
+                "doorway", "door" -> RouteDirection.STRAIGHT
+                "stairs" -> RouteDirection.UP
+                "elevator" -> RouteDirection.STRAIGHT
+                "office" -> RouteDirection.STRAIGHT
+                "entry" -> RouteDirection.STRAIGHT
+                else -> null
+            }
+        }
+    }
+    
+    /**
+     * Berechnet Confidence basierend auf Übereinstimmung der Analysen
+     */
+    private fun calculateDirectionConfidence(
+        textualDirection: RouteDirection,
+        geometricDirection: RouteDirection,
+        landmarks: List<ParsedLandmark>
+    ): Float {
+        
+        var confidence = 0.5f // Basis-Confidence
+        
+        // Erhöhe Confidence bei Übereinstimmung
+        if (textualDirection == geometricDirection) {
+            confidence += 0.3f
+        }
+        
+        // Erhöhe Confidence bei klaren textuellen Anweisungen
+        if (textualDirection != RouteDirection.STRAIGHT) {
+            confidence += 0.2f
+        }
+        
+        // Erhöhe Confidence bei vorhandenen Landmarks
+        if (landmarks.isNotEmpty()) {
+            confidence += 0.1f
+        }
+        
+        return confidence.coerceIn(0.0f, 1.0f)
+    }
+    
+    /**
+     * Analysiert eine komplette Route und gibt alle Schritt-Richtungen zurück
+     */
+    fun parseCompleteRoute(routeJson: String): List<RouteCommandResult> {
+        return try {
+            val gson = Gson()
+            val routeObject = gson.fromJson(routeJson, JsonObject::class.java)
+            val routeArray = routeObject
+                .getAsJsonObject("route")
+                ?.getAsJsonArray("path")
+                ?.get(0)?.asJsonObject
+                ?.getAsJsonArray("routeParts")
+            
+            routeArray?.mapIndexed { index, element ->
+                parseRouteStep(
+                    routeStepJson = element.asJsonObject,
+                    currentStepIndex = index,
+                    totalSteps = routeArray.size()
+                )
+            } ?: emptyList()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Fehler beim Parsen der kompletten Route", e)
+            emptyList()
+        }
+    }
+    
+    /**
+     * Findet den passenden Routenschritt für eine Landmark-ID
+     */
+    fun findRouteStepForLandmark(
+        routeJson: String,
+        landmarkId: String
+    ): RouteCommandResult? {
+        
+        val allSteps = parseCompleteRoute(routeJson)
+        
+        return allSteps.find { step ->
+            step.landmarks.any { landmark ->
+                landmark.id.equals(landmarkId, ignoreCase = true)
+            }
+        }
+    }
+}
+
+/**
+ * Ergebnis der Routenbefehl-Analyse
+ */
+data class RouteCommandResult(
+    val direction: RouteDirection,
+    val confidence: Float,
+    val instruction: String,
+    val landmarks: List<ParsedLandmark>,
+    val geometricAngle: Float,
+    val textualDirection: RouteDirection
+)
+
+/**
+ * Geparste Landmark-Information
+ */
+data class ParsedLandmark(
+    val id: String,
+    val nameDe: String,
+    val nameEn: String,
+    val type: String,
+    val x: Double,
+    val y: Double
+)
