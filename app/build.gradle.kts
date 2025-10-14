@@ -63,6 +63,9 @@ dependencies {
 
     // OpenCV
     implementation(project(":sdk"))
+    
+    // ARCore für 3D AR-Tracking und Pose-Detection
+    implementation(libs.arcore.core)
 
 
 

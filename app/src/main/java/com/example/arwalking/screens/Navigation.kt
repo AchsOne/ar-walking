@@ -29,6 +29,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.Button
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -67,6 +70,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import android.opengl.GLSurfaceView
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
@@ -87,6 +91,11 @@ import org.opencv.android.Utils
 import org.opencv.core.Mat
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
+import com.example.arwalking.MainActivity
+import com.example.arwalking.ar.ARCoreSessionManager
+import android.opengl.GLES30
+import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.opengles.GL10
 
 
 val LocalNavController = staticCompositionLocalOf<NavController> {
@@ -133,13 +142,6 @@ fun CameraScreen(
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val routeViewModel: RouteViewModel = viewModel()
 
-    LaunchedEffect(Unit) {
-        routeViewModel.loadNavigationRoute(context)
-        routeViewModel.enableStorageSystemImmediately(context)
-        routeViewModel.initializeFeatureMapping(context)
-        routeViewModel.startFrameProcessing()
-    }
-
     // Nutzt Route-Daten oder Fallbacks
     val currentRoute by routeViewModel.currentRoute.collectAsState()
     val actualStartLocation = currentRoute?.let { 
@@ -156,6 +158,13 @@ fun CameraScreen(
                 Manifest.permission.CAMERA
             ) == PackageManager.PERMISSION_GRANTED
         )
+    }
+    
+    LaunchedEffect(Unit) {
+        routeViewModel.loadNavigationRoute(context)
+        routeViewModel.enableStorageSystemImmediately(context)
+        routeViewModel.initializeFeatureMapping(context)
+        routeViewModel.startFrameProcessing()
     }
     var showRationaleDialog by remember { mutableStateOf(false) }
 
@@ -181,12 +190,18 @@ fun CameraScreen(
             } else {
                 launcher.launch(Manifest.permission.CAMERA)
             }
+        } else {
+            // Kamera-Permission erhalten - initialisiere AR-System
+            Log.i("AR3D", "🔓 Kamera-Permission erhalten, initialisiere ARCore...")
+            if (activity is MainActivity) {
+                activity.initializeARSystemWithPermission()
+            }
         }
     }
 
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         if (hasPermission) {
-            // Live-Kameravorschau
+            // TEMP: Nur CameraX zum Testen
             CameraPreviewView(
                 modifier = Modifier.fillMaxSize(),
                 lifecycleOwner = lifecycleOwner,
@@ -195,14 +210,15 @@ fun CameraScreen(
                     availableZoomRatios = ratios
                 },
                 onFrameProcessed = { bitmap ->
-                    // Frame für Feature Mapping verarbeiten
                     try {
-                        routeViewModel.processFrameForFeatureMatching(bitmap)  // ✅ Direkt Bitmap übergeben!
+                        routeViewModel.processFrameForFeatureMatching(bitmap)
                     } catch (e: Exception) {
                         Log.e("CameraScreen", "Error processing frame for feature matching", e)
                     }
                 }
             )
+            
+            // TODO: 3D-Overlays später hinzufügen wenn CameraX funktioniert
 
             // AR Walking UI Overlay
             ARWalkingUIOverlay(
@@ -216,6 +232,8 @@ fun CameraScreen(
                 },
                 routeViewModel = routeViewModel
             )
+            
+            // AR-Elemente werden automatisch bei Feature-Matches platziert
 
         } else {
             // Klick-Box zum Anfordern der Berechtigung
@@ -602,6 +620,9 @@ fun CameraPreviewView(
         modifier = modifier,
         factory = { ctx ->
             PreviewView(ctx).apply {
+                // WICHTIG: TextureView verwenden statt SurfaceView (ARCore-kompatibel)
+                implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                
                 try {
                     val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
                     cameraProviderFuture.addListener({
@@ -847,3 +868,202 @@ private fun ARInfoIslandOverlay(
         isVisible = isFeatureMappingEnabled
     )
 }
+
+
+/**
+ * Transparente ARCore 3D-Overlay
+ * Rendert nur 3D-Objekte über CameraX-Background
+ */
+@Composable
+private fun ARCoreTransparent3DOverlay(
+    modifier: Modifier = Modifier,
+    activity: Activity
+) {
+    AndroidView(
+        modifier = modifier,
+        factory = { context ->
+            GLSurfaceView(context).apply {
+                Log.i("AR3D", "🎨 Transparente ARCore 3D-Overlay erstellt")
+                
+                // Transparenter Hintergrund für Overlay
+                setZOrderOnTop(true)
+                holder.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
+                
+                // OpenGL ES 3.0
+                setEGLContextClientVersion(3)
+                
+                // Nur 3D-Rendering, kein Camera-Background
+                if (activity is MainActivity) {
+                    val arCoreSession = activity.getARCoreSessionManager()
+                    if (arCoreSession != null) {
+                        
+                        // Transparenter 3D-Renderer
+                        setRenderer(Transparent3DRenderer(arCoreSession, activity))
+                        renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+                        
+                        Log.i("AR3D", "✅ Transparente 3D-Overlay konfiguriert")
+                        
+                    } else {
+                        Log.e("AR3D", "❌ ARCore Session nicht verfügbar")
+                    }
+                }
+            }
+        }
+    )
+}
+
+/**
+ * Transparenter 3D-Renderer nur für 3D-Objekte
+ */
+private class Transparent3DRenderer(
+    private val sessionManager: ARCoreSessionManager,
+    private val activity: MainActivity
+) : GLSurfaceView.Renderer {
+    
+    override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+        // Transparenter Hintergrund
+        GLES30.glClearColor(0.0f, 0.0f, 0.0f, 0.0f) // Komplett transparent
+        GLES30.glEnable(GLES30.GL_BLEND)
+        GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
+        
+        Log.i("AR3D", "✅ Transparenter 3D-Renderer bereit")
+    }
+    
+    override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
+        GLES30.glViewport(0, 0, width, height)
+    }
+    
+    override fun onDrawFrame(gl: GL10?) {
+        // Transparenter Clear (wichtig!)
+        GLES30.glClear(GLES30.GL_COLOR_BUFFER_BIT or GLES30.GL_DEPTH_BUFFER_BIT)
+        
+        // Nur 3D-Content rendern, kein Background
+        val ar3DRenderer = activity.getAR3DRenderer()
+        val currentFrame = sessionManager.currentFrame.value
+        val cameraPose = sessionManager.cameraPose.value
+        val trackingState = sessionManager.trackingState.value
+        
+        if (ar3DRenderer != null && currentFrame != null && cameraPose != null) {
+            ar3DRenderer.render3DContent(currentFrame, cameraPose, trackingState)
+        }
+    }
+}
+
+/**
+ * ARCore-native GLSurfaceView (DEPRECATED)
+ * Echte ARCore-Integration nach Google Guidelines - kein CameraX-Konflikt
+ */
+@Composable
+private fun ARCoreGLSurfaceView(
+    modifier: Modifier = Modifier,
+    activity: Activity,
+    routeViewModel: RouteViewModel
+) {
+    AndroidView(
+        modifier = modifier,
+        factory = { context ->
+            GLSurfaceView(context).apply {
+                Log.i("AR3D", "🎯 ARCore GLSurfaceView erstellt (Google Guidelines)")
+                
+                // OpenGL ES 3.0 für ARCore
+                setEGLContextClientVersion(3)
+                
+                // ARCore Session Manager als Renderer setzen
+                if (activity is MainActivity) {
+                    val arCoreSession = activity.getARCoreSessionManager()
+                    if (arCoreSession != null) {
+                        
+                        // ARCore Session Manager als GLSurfaceView Renderer
+                        setRenderer(arCoreSession)
+                        
+                        // Kontinuierliches Rendering für AR
+                        renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+                        
+                        // Frame-Processing für Feature-Matching einrichten
+                        setupFrameProcessing(arCoreSession, routeViewModel)
+                        
+                        Log.i("AR3D", "✅ ARCore GLSurfaceView korrekt konfiguriert!")
+                        
+                    } else {
+                        Log.e("AR3D", "❌ ARCore Session nicht verfügbar")
+                    }
+                } else {
+                    Log.e("AR3D", "❌ Activity ist nicht MainActivity")
+                }
+            }
+        },
+        update = { glSurfaceView ->
+            // GLSurfaceView Update bei Compose-Recomposition
+        }
+    )
+}
+
+/**
+ * Setup für Frame-Processing mit ARCore Frames
+ */
+private fun setupFrameProcessing(
+    arCoreSession: com.example.arwalking.ar.ARCoreSessionManager,
+    routeViewModel: RouteViewModel
+) {
+    // ARCore Frames für Feature-Matching verarbeiten
+    val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    val frameProcessor = object : Runnable {
+        override fun run() {
+            try {
+                val currentFrame = arCoreSession.currentFrame.value
+                if (currentFrame != null && arCoreSession.isSessionReady.value) {
+                    // Extrahiere Bitmap aus ARCore Frame für AKAZE
+                    extractBitmapFromARCoreFrame(currentFrame) { bitmap ->
+                        routeViewModel.processFrameForFeatureMatching(bitmap)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.v("AR3D", "Frame-Processing: ${e.message}")
+            } finally {
+                // Nächstes Frame in 100ms (10 FPS für Feature-Matching)
+                handler.postDelayed(this, 100)
+            }
+        }
+    }
+    
+    // Frame-Processing starten
+    handler.post(frameProcessor)
+    Log.i("AR3D", "✅ ARCore Frame-Processing für AKAZE gestartet")
+}
+
+/**
+ * Extrahiert Bitmap aus ARCore Frame (vereinfacht)
+ */
+private fun extractBitmapFromARCoreFrame(
+    frame: com.google.ar.core.Frame,
+    onBitmapReady: (Bitmap) -> Unit
+) {
+    try {
+        // Für Demo: Erstelle ein kleines Test-Bitmap
+        // In Produktion würde man das ARCore Camera Image konvertieren
+        val testBitmap = Bitmap.createBitmap(640, 480, Bitmap.Config.RGB_565)
+        onBitmapReady(testBitmap)
+        
+        // TODO: Echte ARCore Image-zu-Bitmap-Konvertierung implementieren
+        // (wurde entfernt wegen Compiler-Problemen)
+        
+    } catch (e: Exception) {
+        Log.w("AR3D", "ARCore Frame-Extraktion: ${e.message}")
+    }
+}
+
+/**
+ * Entfernt alle 3D-Pfeile
+ */
+private fun clearAll3DArrows(activity: MainActivity) {
+    Log.i("AR3D", "🗑️ Test: Entferne alle 3D-Pfeile...")
+    
+    val ar3DRenderer = activity.getAR3DRenderer()
+    if (ar3DRenderer != null) {
+        ar3DRenderer.clearAnchoredObjects()
+        Log.i("AR3D", "✅ Alle 3D-Pfeile entfernt")
+    } else {
+        Log.w("AR3D", "⚠️ AR3DRenderer nicht verfügbar")
+    }
+}
+

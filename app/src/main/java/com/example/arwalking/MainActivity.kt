@@ -37,10 +37,16 @@ import android.graphics.BitmapFactory
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import org.opencv.android.OpenCVLoader
+import com.example.arwalking.ar.ARCoreSessionManager
+import com.example.arwalking.ar.HybridARTracker
+import com.example.arwalking.ar.AR3DRenderer
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var routeViewModel: RouteViewModel
+    private lateinit var arCoreSessionManager: ARCoreSessionManager
+    private lateinit var hybridARTracker: HybridARTracker
+    private lateinit var ar3DRenderer: AR3DRenderer
 
     private val cameraPermissionLauncher: ActivityResultLauncher<String> =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -109,6 +115,8 @@ class MainActivity : ComponentActivity() {
 
         // Storage initialisieren
         routeViewModel.initializeStorage(this)
+        
+        // ARCore-3D-System wird später initialisiert (nach Kamera-Permission)
 
         enableEdgeToEdge()
 
@@ -135,6 +143,95 @@ class MainActivity : ComponentActivity() {
 
         } else {
             Log.e("FeatureTest", "Fehler beim Laden der Route")
+        }
+    }
+
+    /**
+     * Initialisiert das ARCore-3D-System nach Kamera-Permission
+     */
+    fun initializeARSystemWithPermission() {
+        initializeARSystem()
+    }
+    
+    /**
+     * Gibt AR3DRenderer zurück (für GLSurfaceView-Verbindung)
+     */
+    fun getAR3DRenderer(): AR3DRenderer? {
+        return if (::ar3DRenderer.isInitialized) ar3DRenderer else null
+    }
+    
+    /**
+     * Gibt ARCoreSessionManager zurück (für GLSurfaceView-Verbindung)
+     */
+    fun getARCoreSessionManager(): ARCoreSessionManager? {
+        return if (::arCoreSessionManager.isInitialized) arCoreSessionManager else null
+    }
+
+    /**
+     * Initialisiert das ARCore-3D-System
+     */
+    private fun initializeARSystem() {
+        lifecycleScope.launch {
+            try {
+                Log.i("AR3D", "🚀 Initialisiere ARCore-3D-System...")
+                
+                // ARCore Session Manager erstellen
+                arCoreSessionManager = ARCoreSessionManager(this@MainActivity)
+                
+                // ARCore verfügbarkeit prüfen
+                val arCoreStatus = arCoreSessionManager.checkARCoreAvailability()
+                Log.i("AR3D", "ARCore Status: $arCoreStatus")
+                
+                if (arCoreStatus == ARCoreSessionManager.ARCoreStatus.READY) {
+                    // ARCore Session initialisieren
+                    if (arCoreSessionManager.initializeSession()) {
+                        Log.i("AR3D", "✅ ARCore Session erfolgreich initialisiert")
+                        
+                        // Session explizit starten (WICHTIG!)
+                        if (arCoreSessionManager.startSession()) {
+                            Log.i("AR3D", "✅ ARCore Session gestartet")
+                        } else {
+                            Log.e("AR3D", "❌ ARCore Session konnte nicht gestartet werden")
+                            return@launch
+                        }
+                        
+                        // 3D Renderer erstellen
+                        ar3DRenderer = AR3DRenderer(this@MainActivity, arCoreSessionManager)
+                        
+                        // AR3DRenderer mit ARCore Session verbinden (WICHTIG!)
+                        arCoreSessionManager.setAR3DRenderer(ar3DRenderer)
+                        
+                        // Hybrid AR Tracker erstellen (verbindet ARCore + AKAZE)
+                        hybridARTracker = HybridARTracker(
+                            context = this@MainActivity,
+                            routeViewModel = routeViewModel,
+                            sessionManager = arCoreSessionManager,
+                            renderer3D = ar3DRenderer
+                        )
+                        
+                        // Lifecycle beobachten
+                        lifecycle.addObserver(arCoreSessionManager)
+                        
+                        Log.i("AR3D", "✅ Hybrid AR Tracker initialisiert")
+                        
+                        // Starte Hybrid-Tracking (verbindet ARCore + AKAZE automatisch)
+                        hybridARTracker.startHybridTracking()
+                        
+                        Toast.makeText(this@MainActivity, "🎯 AR-3D-System aktiviert!", Toast.LENGTH_LONG).show()
+                        
+                    } else {
+                        Log.e("AR3D", "❌ ARCore Session konnte nicht initialisiert werden")
+                        Toast.makeText(this@MainActivity, "ARCore-Initialisierung fehlgeschlagen", Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    Log.w("AR3D", "⚠️ ARCore nicht verfügbar: $arCoreStatus")
+                    Toast.makeText(this@MainActivity, "ARCore nicht verfügbar: $arCoreStatus", Toast.LENGTH_LONG).show()
+                }
+                
+            } catch (e: Exception) {
+                Log.e("AR3D", "❌ Fehler bei ARCore-Initialisierung", e)
+                Toast.makeText(this@MainActivity, "ARCore-Fehler: ${e.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -233,6 +330,26 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         Log.d("FeatureTest", "App resumed")
+    }
+    
+    override fun onPause() {
+        super.onPause()
+        Log.d("AR3D", "App paused - stoppe ARCore sanft")
+        
+        // ARCore sanft stoppen um MediaPipe-Fehler zu vermeiden
+        if (::arCoreSessionManager.isInitialized) {
+            arCoreSessionManager.stopSession()
+        }
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d("AR3D", "App destroyed - schließe ARCore komplett")
+        
+        // ARCore komplett schließen
+        if (::arCoreSessionManager.isInitialized) {
+            arCoreSessionManager.closeSession()
+        }
     }
 }
 
