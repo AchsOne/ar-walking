@@ -1,6 +1,5 @@
 package com.example.arwalking
 
-import com.google.gson.annotations.SerializedName
 
 /**
  * Datenmodelle für Feature-based Mapping
