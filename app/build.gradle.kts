@@ -7,6 +7,8 @@ plugins {
 android {
     namespace = "com.example.arwalking"
     compileSdk = 36
+    // Ensure Build Tools 35+ for 16KB ZIP alignment support
+    buildToolsVersion = "35.0.0"
 
     defaultConfig {
         applicationId = "com.example.arwalking"
@@ -17,6 +19,9 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+
+    // Use NDK r27 for 16KB page size support
+    ndkVersion = "27.0.12077973"
 
     buildTypes {
         debug {
@@ -52,6 +57,8 @@ android {
     packaging {
         jniLibs {
             pickFirsts += "**/libc++_shared.so"
+            // Ensure modern packaging so libs remain properly aligned/uncompressed in APK
+            useLegacyPackaging = false
         }
     }
 }
@@ -63,6 +70,9 @@ dependencies {
 
     // OpenCV
     implementation(project(":sdk"))
+
+    // ARCore runtime (required for ArSceneView)
+    implementation("com.google.ar:core:1.41.0")
 
 
 
@@ -92,8 +102,9 @@ dependencies {
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
 
-    //3D Arrow - Temporarily disabled due to dependency issues
-    // implementation("com.gorisse.thomas.sceneform:sceneform:1.22.0")
+    // Sceneform classic (Google) 1.17.1
+    implementation("com.google.ar.sceneform:core:1.17.1")
+    implementation("com.google.ar.sceneform:assets:1.17.1")
 
     // Coroutines (for local processing)
     implementation(libs.kotlinx.coroutines.core)

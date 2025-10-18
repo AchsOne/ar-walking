@@ -43,6 +43,7 @@ import androidx.navigation.NavController
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.example.arwalking.R
 import com.example.arwalking.RouteViewModel
+import com.example.arwalking.ar.ARCoreArrowView
 import com.example.arwalking.components.*
 import com.example.arwalking.data.FavoritesRepository
 import com.example.arwalking.ui.theme.GradientUtils
@@ -121,20 +122,10 @@ fun CameraScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (hasPermission) {
-            CameraPreview(
+            // Use ARCore with integrated camera and feature matching
+            ARCoreArrowView(
                 modifier = Modifier.fillMaxSize(),
-                lifecycleOwner = lifecycleOwner,
-                zoomRatio = currentZoomRatio,
-                onAvailableZoomRatiosChanged = { ratios ->
-                    availableZoomRatios = ratios
-                },
-                onFrameProcessed = { bitmap ->
-                    try {
-                        routeViewModel.processFrame(bitmap)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Frame processing failed", e)
-                    }
-                }
+                routeViewModel = routeViewModel
             )
 
             NavigationOverlay(
