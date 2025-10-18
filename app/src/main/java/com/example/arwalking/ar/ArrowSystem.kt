@@ -9,116 +9,219 @@ import com.google.ar.sceneform.Scene
 import com.google.ar.sceneform.NodeParent
 import com.google.ar.sceneform.math.Quaternion
 import com.google.ar.sceneform.math.Vector3
-import android.net.Uri
 import com.google.ar.sceneform.rendering.Color
 import com.google.ar.sceneform.rendering.MaterialFactory
-import com.google.ar.sceneform.rendering.ModelRenderable
 import com.google.ar.sceneform.rendering.ShapeFactory
 
-/**
- * Clean arrow rendering + control wrappers.
- *
- * ArrowRenderer: builds and manages the 3D arrow node (procedural), with stable materials.
- * ArrowController: manages anchor/anchorNode and positions the arrow accordingly.
- */
-
 data class ArrowConfig(
-    // Enhanced arrow proportions for better aesthetics
-    val stemSize: Vector3 = Vector3(0.08f, 0.08f, 0.50f),
-    val headSize: Vector3 = Vector3(0.25f, 0.08f, 0.30f),
-    // More vibrant green tones with good contrast
-    val colorStem: Color = Color(0.15f, 0.75f, 0.25f),      // Darker green for shaft
-    val colorHead: Color = Color(0.20f, 0.90f, 0.35f),      // Brighter green for head
-    val colorTip: Color = Color(0.25f, 1.0f, 0.45f)         // Very bright green for tip
+    // Geometrie des Chevrons
+    val limbLength: Float = 0.48f,        // Länge je „Arm“
+    val limbRadius: Float = 0.07f,        // Dicke/Radius je „Arm“
+    val chevronAngleDeg: Float = 92f,     // Winkel zwischen den Armen (~90° wie im Bild)
+
+    // Layer-Offsets (für Outline/Bevel-Optik)
+    val layerGapZ: Float = 0.028f,        // Abstand der Layer zueinander
+    val layerGapY: Float = -0.006f,       // leicht nach unten versetzen (Schatten)
+    val backScale: Float = 1.08f,         // Back-Layer minimal größer (weißer Rand)
+    val midScale: Float = 1.02f,          // Mid-Layer minimal größer als Top
+
+    // Farben (Lime-Gelbgrün wie im Screenshot)
+    val colBack: Color = Color(0.95f, 0.98f, 0.90f), // fast Weiß für Outline
+    val colMid:  Color = Color(0.70f, 0.78f, 0.32f), // etwas dunkler
+    val colTop:  Color = Color(0.78f, 0.86f, 0.38f), // heller Vorder-Layer
+
+    // Stack-Einstellungen (drei Chevrons untereinander)
+    val stackCount: Int = 3,
+    val stackOffset: Vector3 = Vector3(0f, 0f, -0.24f), // Versatz je Chevron in die Tiefe (−Z)
+    val stackDepthStep: Float = -0.01f,                 // leichter Z-Versatz pro Chevron (pseudo Parallax)
+
+    // Gesamtskalierung
+    val globalScale: Float = 0.8f
 )
 
-class ArrowRenderer(private val context: Context, private val config: ArrowConfig = ArrowConfig()) {
+class ArrowRenderer(
+    private val context: Context,
+    private val config: ArrowConfig = ArrowConfig()
+) {
     val rootNode: Node = Node()
-    private var modelNode: Node? = null
-
     init { buildProcedural() }
 
     fun ensureRenderable() {
-        if (rootNode.children.isEmpty()) {
-            Log.d("ArrowRenderer", "ensureRenderable: no children -> build procedural arrow")
-            buildProcedural()
-        }
+        if (rootNode.children.isEmpty()) buildProcedural()
     }
 
-    private fun loadChevronGlbOrFallback() {
-        // Current Sceneform dependency does not support direct GLB loading in this project setup.
-        // Falling back to procedural chevron. To use GLB, provide an SFB asset or update Sceneform.
-        buildProcedural()
-        return
+    private fun clearChildren() {
+        rootNode.children.toList().forEach { it.setParent(null) }
+    }
+
+    // --- Hilfsfunktion: „Capsule“ aus Zylinder + 2 Kugel-Kappen ---
+    private fun makeCapsule(length: Float, radius: Float, material: com.google.ar.sceneform.rendering.Material): Node {
+        val parent = Node()
+
+        // Zylinder (Default-Achse = Y). Wir drehen später alles auf Z + Heading.
+        val cyl = ShapeFactory.makeCylinder(radius, length, Vector3(0f, 0f, 0f), material).apply {
+            isShadowCaster = false; isShadowReceiver = false
+        }
+        val cylNode = Node().apply {
+            renderable = cyl
+        }
+        parent.addChild(cylNode)
+
+        // Kugel-Kappen
+        val cap = ShapeFactory.makeSphere(radius, Vector3(0f, 0f, 0f), material).apply {
+            isShadowCaster = false; isShadowReceiver = false
+        }
+        val capTop = Node().apply {
+            renderable = cap
+            localPosition = Vector3(0f, +length / 2f, 0f)
+        }
+        val capBottom = Node().apply {
+            renderable = cap
+            localPosition = Vector3(0f, -length / 2f, 0f)
+        }
+        parent.addChild(capTop)
+        parent.addChild(capBottom)
+
+        return parent
+    }
+
+    // Ein Layer = zwei Kapseln, zu einem Chevron zusammengesetzt
+    private fun makeChevronLayer(
+        length: Float,
+        radius: Float,
+        angleDeg: Float,
+        material: com.google.ar.sceneform.rendering.Material
+    ): Node {
+        val layer = Node()
+
+        val half = angleDeg / 2f
+        val h1 = Math.toRadians(half.toDouble()).toFloat()   // Heading +half
+        val h2 = Math.toRadians(-half.toDouble()).toFloat()  // Heading -half
+
+        // Positionsversatz der Limb-Center vom Eckpunkt (0,0,0)
+        // Wir bauen die Kapsel entlang Z, also:
+        // 1) Zylinder-Achse Y -> auf Z drehen (X-90°)
+        // 2) um Y um heading drehen
+        val centerOffset = length / 2f
+
+        // Limb 1
+        val limb1 = makeCapsule(length, radius, material)
+        limb1.localRotation = Quaternion.multiply(
+            Quaternion.axisAngle(Vector3(0f, 1f, 0f), Math.toDegrees(h1.toDouble()).toFloat()),
+            Quaternion.axisAngle(Vector3(1f, 0f, 0f), 90f)
+        )
+        limb1.localPosition = Vector3(
+            (Math.sin(h1.toDouble()) * centerOffset).toFloat(),
+            0f,
+            (Math.cos(h1.toDouble()) * centerOffset).toFloat()
+        )
+        layer.addChild(limb1)
+
+        // Limb 2
+        val limb2 = makeCapsule(length, radius, material)
+        limb2.localRotation = Quaternion.multiply(
+            Quaternion.axisAngle(Vector3(0f, 1f, 0f), Math.toDegrees(h2.toDouble()).toFloat()),
+            Quaternion.axisAngle(Vector3(1f, 0f, 0f), 90f)
+        )
+        limb2.localPosition = Vector3(
+            (Math.sin(h2.toDouble()) * centerOffset).toFloat(),
+            0f,
+            (Math.cos(h2.toDouble()) * centerOffset).toFloat()
+        )
+        layer.addChild(limb2)
+
+        return layer
+    }
+
+    // Baut einen Chevron als 3-Layer-Gruppe (Back/Mid/Top)
+    private fun makeChevronGroup(
+        mBack: com.google.ar.sceneform.rendering.Material,
+        mMid: com.google.ar.sceneform.rendering.Material,
+        mTop: com.google.ar.sceneform.rendering.Material
+    ): Node {
+        val group = Node()
+
+        // BACK (weißer Rand / „Sticker“-Look)
+        val back = makeChevronLayer(
+            config.limbLength,
+            config.limbRadius,
+            config.chevronAngleDeg,
+            mBack
+        ).apply {
+            localScale = Vector3(config.backScale, config.backScale, config.backScale)
+            localPosition = Vector3(0f, config.layerGapY * 2f, -config.layerGapZ * 2f)
+        }
+        group.addChild(back)
+
+        // MID (dunkler)
+        val mid = makeChevronLayer(
+            config.limbLength,
+            config.limbRadius,
+            config.chevronAngleDeg,
+            mMid
+        ).apply {
+            localScale = Vector3(config.midScale, config.midScale, config.midScale)
+            localPosition = Vector3(0f, config.layerGapY, -config.layerGapZ)
+        }
+        group.addChild(mid)
+
+        // TOP (heller, sichtbar vorne)
+        val top = makeChevronLayer(
+            config.limbLength,
+            config.limbRadius,
+            config.chevronAngleDeg,
+            mTop
+        )
+        group.addChild(top)
+
+        return group
     }
 
     fun buildProcedural() {
-        // Build a simple, stable 3D chevron arrow pointing forward
-        MaterialFactory.makeOpaqueWithColor(context, config.colorHead).thenAccept { arrowMat ->
-            try {
-                // Clear any existing children first
-                val childrenToRemove = rootNode.children.toList()
-                childrenToRemove.forEach { it.setParent(null) }
-                
-                // Single 3D chevron - simple and stable
-                // Create the main chevron body using a rotated cube to form triangle shape
-                val chevronBody = ShapeFactory.makeCube(
-                    Vector3(0.15f, 0.08f, 0.25f), // substantial size for visibility
-                    Vector3(0f, 0f, 0f), // centered
-                    arrowMat
-                )
-                
-                val chevronNode = Node().apply {
-                    renderable = chevronBody
-                    // Rotate to create diamond/chevron pointing forward
-                    localRotation = Quaternion.axisAngle(Vector3(0f, 1f, 0f), 45f)
+        MaterialFactory.makeOpaqueWithColor(context, config.colBack).thenAccept { mBack ->
+            MaterialFactory.makeOpaqueWithColor(context, config.colMid).thenAccept { mMid ->
+                MaterialFactory.makeOpaqueWithColor(context, config.colTop).thenAccept { mTop ->
+                    try {
+                        clearChildren()
+
+                        // Drei Chevrons als Stack erzeugen
+                        for (i in 0 until config.stackCount) {
+                            val chevron = makeChevronGroup(mBack, mMid, mTop)
+
+                            // Position je Element im Stack
+                            val offset = config.stackOffset
+                            val pos = Vector3(
+                                offset.x * i,
+                                offset.y * i,
+                                (offset.z + config.stackDepthStep) * i
+                            )
+                            chevron.localPosition = pos
+
+                            rootNode.addChild(chevron)
+                        }
+
+                        // Gesamt-Scale kleiner
+                        rootNode.localScale = Vector3(config.globalScale, config.globalScale, config.globalScale)
+
+                        Log.d("ArrowRenderer", "Chevron stack (3x) created")
+                    } catch (e: Exception) {
+                        Log.e("ArrowRenderer", "Failed to build chevron stack: ${e.message}", e)
+                    }
                 }
-                rootNode.addChild(chevronNode)
-                
-                // Add a pointed tip for clear direction indication
-                val tip = ShapeFactory.makeCube(
-                    Vector3(0.08f, 0.05f, 0.12f), // smaller tip
-                    Vector3(0f, 0f, 0.18f), // positioned at front
-                    arrowMat
-                )
-                
-                val tipNode = Node().apply {
-                    renderable = tip
-                    localRotation = Quaternion.axisAngle(Vector3(0f, 1f, 0f), 45f)
-                }
-                rootNode.addChild(tipNode)
-                
-                // Scale for optimal visibility but keep small
-                rootNode.localScale = Vector3(0.9f, 0.9f, 0.9f)
-                
-                // Disable shadows to improve stability
-                chevronBody.isShadowCaster = false
-                chevronBody.isShadowReceiver = false
-                tip.isShadowCaster = false
-                tip.isShadowReceiver = false
-                
-                Log.d("ArrowRenderer", "Simple stable 3D chevron arrow created")
-            } catch (e: Exception) {
-                Log.e("ArrowRenderer", "Failed to build chevron arrow: ${e.message}", e)
             }
         }
     }
 
     fun setParent(parent: NodeParent?) { rootNode.setParent(parent) }
-
     fun setWorldPose(position: Vector3, yawDeg: Float) {
         rootNode.worldPosition = position
         rootNode.worldRotation = Quaternion.axisAngle(Vector3(0f, 1f, 0f), yawDeg)
     }
-
     fun setLocalPose(position: Vector3, yawDeg: Float) {
         rootNode.localPosition = position
         rootNode.localRotation = Quaternion.axisAngle(Vector3(0f, 1f, 0f), yawDeg)
     }
-
-    fun setUnlitIfPossible() {
-        // For GLB materials we keep defaults; for procedural, nothing to do here
-    }
+    fun setUnlitIfPossible() { /* procedural -> no-op */ }
 }
 
 class ArrowController(private val context: Context) {
@@ -128,7 +231,6 @@ class ArrowController(private val context: Context) {
 
     fun attachTo(scene: Scene) {
         if (renderer.rootNode.parent == null) {
-            Log.d("ArrowController", "Attaching renderer root to scene")
             renderer.setParent(scene)
         }
         renderer.ensureRenderable()
@@ -146,62 +248,38 @@ class ArrowController(private val context: Context) {
         anchor = null
     }
 
-    fun placeFallback(scene: Scene, yawDeg: Float, localPos: Vector3 = Vector3(0f, 0f, -1.5f)) {
-        // Stable fallback positioning relative to camera
-        if (renderer.rootNode.parent != scene.camera) {
-            renderer.setParent(scene.camera)
-        }
-        renderer.setLocalPose(localPos, yawDeg)
-        
-        // Ensure renderable exists in fallback mode
-        renderer.ensureRenderable()
-    }
-
     fun placeAnchor(scene: Scene, newAnchor: Anchor, yawDeg: Float) {
-        // Improved anchor management for stability
         try {
-            // Clean up old anchor properly
             if (anchor != null && anchor != newAnchor) {
                 anchorNode?.anchor?.detach()
                 anchor = null
             }
         } catch (_: Exception) {}
-        
+
         anchor = newAnchor
-        
+
         if (anchorNode == null) {
-            // Create new anchor node
-            anchorNode = AnchorNode(newAnchor).apply { 
+            anchorNode = AnchorNode(newAnchor).apply {
                 setParent(scene)
-                // Ensure stable positioning
                 isEnabled = true
             }
         } else {
-            // Update existing anchor node
             anchorNode!!.anchor = newAnchor
-            if (anchorNode!!.parent != scene) {
-                anchorNode!!.setParent(scene)
-            }
+            if (anchorNode!!.parent != scene) anchorNode!!.setParent(scene)
         }
-        
-        // Ensure renderer is properly attached
+
         if (renderer.rootNode.parent != anchorNode) {
             renderer.setParent(anchorNode)
         }
-        
-        // Position arrow slightly above ground with stable offset
+
+        // Fixed offset above ground; keep stable
         renderer.setLocalPose(Vector3(0f, 0.12f, 0f), yawDeg)
-        
-        // Ensure renderable exists
         renderer.ensureRenderable()
     }
 
     fun updateYaw(yawDeg: Float) {
-        // Update rotation while preserving position for stability
         val currentPos = renderer.rootNode.localPosition
         renderer.setLocalPose(currentPos, yawDeg)
-        
-        // Ensure renderable stability
         renderer.ensureRenderable()
     }
 }

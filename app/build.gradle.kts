@@ -102,12 +102,10 @@ dependencies {
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
 
-    // === CLEAN GLB 3D ARROW SYSTEM ===
-    
-    // Sceneform classic (GLB via RenderableSource)
+    // Sceneform classic (Google) 1.17.1
     implementation("com.google.ar.sceneform:core:1.17.1")
     implementation("com.google.ar.sceneform:assets:1.17.1")
-    
+
     // Coroutines (for local processing)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)

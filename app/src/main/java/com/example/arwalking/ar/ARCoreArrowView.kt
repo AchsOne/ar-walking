@@ -151,11 +151,6 @@ fun ARCoreArrowView(
                 val hasTrackedPlane = planesAll.any { it.trackingState == TrackingState.TRACKING }
                 if (!hasTrackedPlane) {
                     // If we already have an anchor, keep it and just update yaw; do NOT fallback
-                    if (controller.isAnchored()) {
-                        controller.updateYaw(latchedYaw)
-                        Log.d("ARCoreArrow", "No tracked plane, keeping anchored arrow (yaw=${"%.1f".format(latchedYaw)})")
-                        return@addOnUpdateListener
-                    }
                     // Try instant placement anchor at screen center
                     val instantHit = performInstantPlacementHitTest(frame, centerX = arSceneView.width / 2f, centerY = arSceneView.height / 2f, estimatedDistanceM = 1.2f)
                     if (instantHit != null) {
@@ -174,9 +169,7 @@ fun ARCoreArrowView(
                         Log.d("ARCoreArrow", "InstantPlacement anchor created at center (yaw=${"%.1f".format(latchedYaw)})")
                         return@addOnUpdateListener
                     }
-                    // As last resort: show camera-relative only because we are recognized
-                    Log.d("ARCoreArrow", "No tracked plane and no instant hit; temporary camera-relative display (recognized)")
-                    controller.placeFallback(arSceneView.scene, directionDeg)
+                    // No camera-relative fallback: wait for a valid anchor
                     return@addOnUpdateListener
                 }
 
@@ -192,8 +185,7 @@ fun ARCoreArrowView(
                             Log.d("ARCoreArrow", "No new hit; keeping existing anchor and updating yaw only")
                             controller.updateYaw(directionDeg)
                         } else {
-                            Log.d("ARCoreArrow", "Arrow not shown: no hit near center and no existing anchor")
-                            controller.placeFallback(arSceneView.scene, directionDeg)
+                            Log.d("ARCoreArrow", "No hit near center and no existing anchor; waiting for plane")
                         }
                         return@addOnUpdateListener
                     }
