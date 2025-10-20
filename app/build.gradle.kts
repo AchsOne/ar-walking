@@ -69,12 +69,17 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
 
     // OpenCV
-    implementation(project(":sdk"))
+    implementation(project(":sdk")) {
+        exclude(group = "com.android.support")
+    }
 
     // ARCore runtime (required for ArSceneView)
     implementation("com.google.ar:core:1.41.0")
 
-
+    // ARCore
+    implementation("com.google.ar:core:1.45.0")
+    implementation("com.google.ar.sceneform:core:1.17.1")
+    implementation("com.google.ar.sceneform.ux:sceneform-ux:1.17.1")
 
     // Compose
     implementation(libs.androidx.activity.compose)
