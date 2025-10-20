@@ -226,6 +226,16 @@ private fun NavigationOverlay(
                 .offset(y = 140.dp)
         )
 
+        // RANSAC Debug Island
+        val ransacStats by routeViewModel.ransacStats.collectAsState()
+        RANSACDebugIsland(
+            ransacStats = ransacStats,
+            isFeatureMappingEnabled = isFeatureMappingEnabled,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 140.dp)
+        )
+
         val navigationSteps = currentRoute?.steps?.map { step ->
             val iconRes = when {
                 step.instruction.contains("door", ignoreCase = true) -> R.drawable.navigation21

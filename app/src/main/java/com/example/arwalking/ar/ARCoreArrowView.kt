@@ -39,6 +39,7 @@ import com.google.ar.sceneform.rendering.MaterialFactory
 import com.google.ar.sceneform.rendering.ShapeFactory
 import com.google.ar.sceneform.Node
 import com.example.arwalking.ar.ArrowController
+import com.google.ar.core.Pose
 import org.opencv.android.Utils
 import org.opencv.core.CvType
 import org.opencv.core.Mat
@@ -51,10 +52,13 @@ import org.opencv.core.Mat
  * - Feeds CPU camera frames into RouteViewModel for landmark recognition
  * - Confidence threshold for landmark recognition: 60%
  */
+
 // Confidence-Schwelle für zuverlässige Landmarken-Erkennung
 private const val MIN_CONFIDENCE_FOR_ARROW = 0.60f // 60%
 private const val MIN_MATCHES_FOR_ARROW = 3 // Mindestanzahl Feature-Matches
-
+// Camera-relative Platzierung Konfiguration
+private const val ARROW_DISTANCE_M = 1.5f      // Wie weit vor Kamera
+private const val ARROW_HEIGHT_OFFSET_M = -1.2f // Wie tief unter Kamera
 @Composable
 fun ARCoreArrowView(
     modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
@@ -174,75 +178,55 @@ fun ARCoreArrowView(
                     return@addOnUpdateListener
                 }
 
-                // Avoid hit tests until at least one plane is TRACKING (use all trackables, not just updated)
-                val planesAll = arSceneView.session?.getAllTrackables(Plane::class.java) ?: emptyList()
-                val hasTrackedPlane = planesAll.any { it.trackingState == TrackingState.TRACKING }
-                if (!hasTrackedPlane) {
-                    // If we already have an anchor, keep it and just update yaw; do NOT fallback
-                    // Try instant placement anchor at screen center
-                    val instantHit = performInstantPlacementHitTest(frame, centerX = arSceneView.width / 2f, centerY = arSceneView.height / 2f, estimatedDistanceM = 1.2f)
-                    if (instantHit != null) {
-                        topMatch?.let { tm ->
-                            val newLandmarkId = tm.landmark.id
-                            val newYaw = directionDeg
-                            if (latchedLandmarkId != newLandmarkId) {
-                                latchedLandmarkId = newLandmarkId
-                                latchedYaw = newYaw
-                            } else {
-                                // keep previous yaw until a NEW match occurs
-                            }
-                        }
-                        val anchor = instantHit.createAnchor()
-                        controller.placeAnchor(arSceneView.scene, anchor, latchedYaw)
-                        Log.d("ARCoreArrow", "InstantPlacement anchor created at center (yaw=${"%.1f".format(latchedYaw)})")
-                        return@addOnUpdateListener
-                    }
-                    // No camera-relative fallback: wait for a valid anchor
-                    return@addOnUpdateListener
-                }
+                // ========================================
+                // Camera-Relative Platzierung (Option 1)
+                // ========================================
 
-                val viewport = arSceneView.width to arSceneView.height
-                if (viewport.first == 0 || viewport.second == 0) return@addOnUpdateListener
-                val centerX = viewport.first / 2f
-                val centerY = viewport.second / 2f // true screen center for hit test
-                var hitResult = performCenterHitTest(frame, centerX, centerY)
-                if (hitResult == null) {
-                    hitResult = performNeighborHitTest(frame, centerX, centerY, viewport.first, viewport.second)
-                    if (hitResult == null) {
-                        if (controller.isAnchored()) {
-                            Log.d("ARCoreArrow", "No new hit; keeping existing anchor and updating yaw only")
-                            controller.updateYaw(directionDeg)
-                        } else {
-                            Log.d("ARCoreArrow", "No hit near center and no existing anchor; waiting for plane")
-                        }
-                        return@addOnUpdateListener
-                    }
-                }
-                // We have a hit (center or neighbor) AND a landmark is recognized
-                // Update landmark and yaw from the current route instruction
+                // Update latched state wenn Landmark erkannt
                 topMatch?.let { tm ->
                     val newLandmarkId = tm.landmark.id
                     val newYaw = directionDeg
-                    
+
                     if (latchedLandmarkId != newLandmarkId) {
-                        // Neue Landmarke erkannt - latche sie und die Richtung
                         latchedLandmarkId = newLandmarkId
                         latchedYaw = newYaw
-                        Log.d("ARCoreArrow", "New landmark recognized: ${newLandmarkId}, direction: yaw=${"%.1f".format(latchedYaw)}")
-                    } else {
-                        // Gleiche Landmarke, aber möglicherweise neue Richtung basierend auf Route
-                        if (newYaw != latchedYaw) {
-                            latchedYaw = newYaw
-                            Log.d("ARCoreArrow", "Updated direction for landmark ${newLandmarkId}: yaw=${"%.1f".format(latchedYaw)}")
-                        }
+                        Log.d("ARCoreArrow", "New landmark: $newLandmarkId, yaw=${"%.1f".format(latchedYaw)}")
+                    } else if (newYaw != latchedYaw) {
+                        latchedYaw = newYaw
+                        Log.d("ARCoreArrow", "Direction updated for $newLandmarkId: yaw=${"%.1f".format(latchedYaw)}")
                     }
                 }
 
+                // Platziere oder update Pfeil
                 if (!controller.isAnchored()) {
-                    val anchor = hitResult.createAnchor()
-                    controller.placeAnchor(arSceneView.scene, anchor, latchedYaw)
-                    Log.d("ARCoreArrow", "Arrow anchored on hit and shown (yaw=${"%.1f".format(latchedYaw)})")
+                    // Noch kein Pfeil → erstelle camera-relative Anchor
+                    val cameraPose = frame.camera.pose
+
+                    // Berechne Forward-Vektor (ARROW_DISTANCE_M vor Kamera)
+                    val forward = floatArrayOf(0f, 0f, -ARROW_DISTANCE_M)
+                    val rotated = FloatArray(3)
+                    cameraPose.rotateVector(forward, 0, rotated, 0)
+
+                    // Zielposition: Kamera + Forward, abgesenkt auf Bodenhöhe
+                    val targetX = cameraPose.tx() + rotated[0]
+                    val targetY = cameraPose.ty() + ARROW_HEIGHT_OFFSET_M
+                    val targetZ = cameraPose.tz() + rotated[2]
+
+                    // Erstelle Anchor an berechneter Position
+                    val targetPose = Pose(
+                        floatArrayOf(targetX, targetY, targetZ),
+                        floatArrayOf(0f, 0f, 0f, 1f)  // Keine Rotation
+                    )
+                    val anchor = arSceneView.session?.createAnchor(targetPose)
+
+                    if (anchor != null) {
+                        controller.placeAnchor(arSceneView.scene, anchor, latchedYaw)
+                        Log.d("ARCoreArrow", "Anchor placed at camera-relative position: (${"%.2f".format(targetX)}, ${"%.2f".format(targetY)}, ${"%.2f".format(targetZ)}), yaw=${"%.1f".format(latchedYaw)}")
+                    } else {
+                        Log.e("ARCoreArrow", "Failed to create camera-relative anchor")
+                    }
                 } else {
+                    // Pfeil existiert bereits → nur Richtung updaten
                     controller.updateYaw(latchedYaw)
                 }
             }
