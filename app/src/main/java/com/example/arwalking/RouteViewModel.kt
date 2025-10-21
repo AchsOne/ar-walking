@@ -50,9 +50,6 @@ class RouteViewModel : ViewModel() {
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
 
     private val _featureMappingEnabled = MutableStateFlow(false)
-    // RANSAC Debug-Informationen
-    private val _ransacStats = MutableStateFlow<RANSACStats?>(null)
-    val ransacStats: StateFlow<RANSACStats?> = _ransacStats.asStateFlow()
     val featureMappingEnabled: StateFlow<Boolean> = _featureMappingEnabled.asStateFlow()
 
     // Feature detection
@@ -62,7 +59,7 @@ class RouteViewModel : ViewModel() {
     private val detectionHistory = mutableMapOf<String, DetectionHistory>()
 
     // Config
-    private var autoAdvanceThreshold = 0.65f
+    private var autoAdvanceThreshold = 0.50f
     private var lastProcessedTime = 0L
     private var frameCounter = 0
 
@@ -342,11 +339,10 @@ class RouteViewModel : ViewModel() {
                 return createEmptyMatch(landmark.id)
             }
 
-            // Schritt 1: KNN Matching mit Lowe's Ratio Test
             val knnMatches = mutableListOf<MatOfDMatch>()
             matcher?.knnMatch(frame.descriptors, landmark.descriptors, knnMatches, 2)
 
-            val goodDMatches = mutableListOf<DMatch>()
+            var goodMatches = 0
             var totalDistance = 0f
 
             knnMatches.forEach { match ->
@@ -355,266 +351,40 @@ class RouteViewModel : ViewModel() {
                     val m = arr[0]
                     val n = arr[1]
                     if (m.distance < RATIO_THRESHOLD * n.distance) {
-                        goodDMatches.add(m)
+                        goodMatches++
                         totalDistance += m.distance
                     }
                 }
             }
 
-            // Cleanup KNN matches
+            val avgDistance = if (goodMatches > 0) totalDistance / goodMatches else Float.MAX_VALUE
+            val minKeypoints = minOf(frame.keypoints.rows(), landmark.keypoints.rows())
+
+            val confidence = if (goodMatches > 0) {
+                when {
+                    minKeypoints <= 15 -> (goodMatches.toFloat() / 8f).coerceAtMost(1f)
+                    else -> {
+                        val matchRatio = goodMatches.toFloat() / minKeypoints
+                        val qualityScore = (goodMatches.toFloat() / 15f).coerceAtMost(1f)
+                        val distanceScore = if (avgDistance != Float.MAX_VALUE) {
+                            (100f / (avgDistance + 1f)).coerceIn(0f, 1f)
+                        } else 0f
+
+                        (matchRatio * 0.4f + qualityScore * 0.4f + distanceScore * 0.2f).coerceIn(0f, 1f)
+                    }
+                }
+            } else 0f
+
             knnMatches.forEach { it.release() }
 
-            // Schritt 2: Prüfe ob RANSAC möglich ist
-            if (goodDMatches.size < MIN_MATCHES_FOR_RANSAC) {
-                // Zu wenige Matches für RANSAC → Fallback auf einfache Zählung
-                Log.d(TAG, "Landmark ${landmark.id}: ${goodDMatches.size} matches (zu wenig für RANSAC)")
-                return createMatchFromBasicCount(landmark.id, goodDMatches.size, totalDistance)
-            }
-
-            // Schritt 3: RANSAC Homographie-Schätzung
-            val ransacResult = estimateHomographyRANSAC(
-                frame.keypoints,
-                landmark.keypoints,
-                goodDMatches
-            )
-
-            if (ransacResult == null) {
-                // RANSAC fehlgeschlagen → Fallback
-                Log.d(TAG, "Landmark ${landmark.id}: RANSAC failed, using basic count")
-                return createMatchFromBasicCount(landmark.id, goodDMatches.size, totalDistance)
-            }
-
-            // Schritt 4: Berechne geometrisch validierte Confidence
-            val geometricConfidence = calculateGeometricConfidence(ransacResult)
-
-            // Cleanup
-            ransacResult.homography.release()
-
             val landmarkData = getLandmarks().find { it.id == landmark.id }
-                ?: RouteLandmarkData(landmark.id, landmark.id)
+                ?: RouteLandmarkData(landmark.id)
 
-            // Publiziere RANSAC Stats für UI
-            val inlierRatio = ransacResult.inliers.size.toFloat() / goodDMatches.size
-            _ransacStats.value = RANSACStats(
-                landmarkId = landmark.id,
-                landmarkName = landmarkData.name,
-                totalMatches = goodDMatches.size,
-                inliers = ransacResult.inliers.size,
-                outliers = ransacResult.outliers.size,
-                inlierRatio = inlierRatio,
-                reprojectionError = ransacResult.reprojectionError,
-                confidence = geometricConfidence,
-                usedRANSAC = true
-            )
-
-            Log.d(TAG, "Landmark ${landmark.id}: ${ransacResult.inliers.size} inliers (${goodDMatches.size} total), " +
-                    "confidence=${(geometricConfidence * 100).toInt()}%, reproj_error=${"%.2f".format(ransacResult.reprojectionError)}")
-
-            return LandmarkMatch(
-                landmark = landmarkData,
-                matchCount = ransacResult.inliers.size,
-                confidence = geometricConfidence,
-                distance = ransacResult.avgDistance
-            )
-
+            return LandmarkMatch(landmarkData, goodMatches, confidence, avgDistance)
         } catch (e: Exception) {
-            Log.e(TAG, "Feature matching failed for ${landmark.id}", e)
+            Log.e(TAG, "Feature matching failed", e)
             return createEmptyMatch(landmark.id)
         }
-    }
-
-    private fun estimateHomographyRANSAC(
-        frameKeypoints: MatOfKeyPoint,
-        landmarkKeypoints: MatOfKeyPoint,
-        matches: List<DMatch>
-    ): RANSACResult? {
-        try {
-            if (matches.size < MIN_MATCHES_FOR_RANSAC) return null
-
-            // Extrahiere Punkt-Koordinaten aus Keypoints
-            val framePoints = mutableListOf<Point>()
-            val landmarkPoints = mutableListOf<Point>()
-
-            val frameKpArray = frameKeypoints.toArray()
-            val landmarkKpArray = landmarkKeypoints.toArray()
-
-            matches.forEach { match ->
-                if (match.queryIdx < frameKpArray.size && match.trainIdx < landmarkKpArray.size) {
-                    framePoints.add(frameKpArray[match.queryIdx].pt)
-                    landmarkPoints.add(landmarkKpArray[match.trainIdx].pt)
-                }
-            }
-
-            if (framePoints.size < MIN_MATCHES_FOR_RANSAC) return null
-
-            val srcPoints = MatOfPoint2f(*framePoints.toTypedArray())
-            val dstPoints = MatOfPoint2f(*landmarkPoints.toTypedArray())
-
-            // RANSAC Homographie-Schätzung
-            val mask = Mat()
-            val homography = Calib3d.findHomography(
-                srcPoints,
-                dstPoints,
-                Calib3d.RANSAC,
-                RANSAC_THRESHOLD,
-                mask,
-                RANSAC_MAX_ITERATIONS,
-                RANSAC_CONFIDENCE
-            )
-
-            if (homography.empty()) {
-                srcPoints.release()
-                dstPoints.release()
-                mask.release()
-                return null
-            }
-
-            // Separiere Inliers und Outliers basierend auf RANSAC Mask
-            val inliers = mutableListOf<DMatch>()
-            val outliers = mutableListOf<DMatch>()
-            var totalDistance = 0f
-
-            val maskArray = ByteArray(mask.rows())
-            mask.get(0, 0, maskArray)
-
-            matches.forEachIndexed { index, match ->
-                if (index < maskArray.size) {
-                    if (maskArray[index].toInt() == 1) {
-                        inliers.add(match)
-                        totalDistance += match.distance
-                    } else {
-                        outliers.add(match)
-                    }
-                }
-            }
-
-            val avgDistance = if (inliers.isNotEmpty()) {
-                totalDistance / inliers.size
-            } else Float.MAX_VALUE
-
-            // Berechne Reprojection Error
-            val reprojError = calculateReprojectionError(
-                srcPoints, dstPoints, homography, maskArray
-            )
-
-            // Cleanup
-            srcPoints.release()
-            dstPoints.release()
-            mask.release()
-
-            return RANSACResult(
-                homography = homography,
-                inliers = inliers,
-                outliers = outliers,
-                avgDistance = avgDistance,
-                reprojectionError = reprojError
-            )
-
-        } catch (e: Exception) {
-            Log.e(TAG, "RANSAC estimation failed", e)
-            return null
-        }
-    }
-
-    private fun calculateReprojectionError(
-        srcPoints: MatOfPoint2f,
-        dstPoints: MatOfPoint2f,
-        homography: Mat,
-        mask: ByteArray
-    ): Double {
-        return try {
-            val projectedPoints = MatOfPoint2f()
-            Core.perspectiveTransform(srcPoints, projectedPoints, homography)
-
-            val src = srcPoints.toArray()
-            val dst = dstPoints.toArray()
-            val proj = projectedPoints.toArray()
-
-            var totalError = 0.0
-            var inlierCount = 0
-
-            mask.forEachIndexed { index, isInlier ->
-                if (index < src.size && index < dst.size && index < proj.size) {
-                    if (isInlier.toInt() == 1) {
-                        val dx = dst[index].x - proj[index].x
-                        val dy = dst[index].y - proj[index].y
-                        totalError += kotlin.math.sqrt(dx * dx + dy * dy)
-                        inlierCount++
-                    }
-                }
-            }
-
-            projectedPoints.release()
-
-            if (inlierCount > 0) totalError / inlierCount else Double.MAX_VALUE
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Reprojection error calculation failed", e)
-            Double.MAX_VALUE
-        }
-    }
-
-    private fun calculateGeometricConfidence(result: RANSACResult): Float {
-        val totalMatches = result.inliers.size + result.outliers.size
-        if (totalMatches == 0) return 0f
-
-        // Komponente 1: Inlier Ratio (wie viele Matches sind geometrisch konsistent?)
-        val inlierRatio = result.inliers.size.toFloat() / totalMatches
-        val inlierScore = inlierRatio.coerceIn(0f, 1f)
-
-        // Komponente 2: Absolute Anzahl Inliers (mindestens 15 für volle Punktzahl)
-        val countScore = (result.inliers.size.toFloat() / 15f).coerceAtMost(1f)
-
-        // Komponente 3: Geometrische Qualität (niedriger Reprojection Error ist besser)
-        val errorScore = if (result.reprojectionError != Double.MAX_VALUE) {
-            // Guter Error: < 2 Pixel → Score 1.0
-            // Schlechter Error: > 10 Pixel → Score 0.0
-            val normalizedError = (result.reprojectionError / 10.0).coerceIn(0.0, 1.0)
-            (1.0 - normalizedError).toFloat()
-        } else 0f
-
-        // Komponente 4: Feature Distance Quality
-        val distanceScore = if (result.avgDistance != Float.MAX_VALUE) {
-            // Niedrige Distance = bessere Matches
-            (100f / (result.avgDistance + 1f)).coerceIn(0f, 1f)
-        } else 0f
-
-        // Gewichtete Kombination
-        val confidence = (
-                inlierScore * 0.40f +      // 40% Inlier-Ratio (wichtigster Faktor)
-                        countScore * 0.30f +       // 30% Absolute Anzahl
-                        errorScore * 0.20f +       // 20% Geometrische Qualität
-                        distanceScore * 0.10f      // 10% Feature Distance
-                ).coerceIn(0f, 1f)
-
-        return confidence
-    }
-
-    private fun createMatchFromBasicCount(
-        landmarkId: String,
-        matchCount: Int,
-        totalDistance: Float
-    ): LandmarkMatch {
-        val confidence = (matchCount.toFloat() / 15f).coerceAtMost(1f) * 0.5f
-        val avgDistance = if (matchCount > 0) totalDistance / matchCount else Float.MAX_VALUE
-
-        val landmark = getLandmarks().find { it.id == landmarkId }
-            ?: RouteLandmarkData(landmarkId, landmarkId)
-
-        // Publiziere Stats für Nicht-RANSAC Fall
-        _ransacStats.value = RANSACStats(
-            landmarkId = landmarkId,
-            landmarkName = landmark.name,
-            totalMatches = matchCount,
-            inliers = 0,
-            outliers = 0,
-            inlierRatio = 0f,
-            reprojectionError = Double.MAX_VALUE,
-            confidence = confidence,
-            usedRANSAC = false
-        )
-
-        return LandmarkMatch(landmark, matchCount, confidence, avgDistance)
     }
 
     private fun analyzeProgression(matches: List<LandmarkMatch>) {
@@ -748,7 +518,7 @@ class RouteViewModel : ViewModel() {
 
     private fun createEmptyMatch(landmarkId: String): LandmarkMatch {
         val landmark = getLandmarks().find { it.id == landmarkId }
-            ?: RouteLandmarkData(landmarkId, landmarkId)
+            ?: RouteLandmarkData(landmarkId)
         return LandmarkMatch(landmark, 0, 0f, Float.MAX_VALUE)
     }
 
@@ -791,27 +561,6 @@ class RouteViewModel : ViewModel() {
         var isStable: Boolean = false
     )
 
-    data class RANSACResult(
-        val homography: Mat,
-        val inliers: List<DMatch>,
-        val outliers: List<DMatch>,
-        val avgDistance: Float,
-        val reprojectionError: Double
-    )
-
-    data class RANSACStats(
-        val landmarkId: String,
-        val landmarkName: String,
-        val totalMatches: Int,
-        val inliers: Int,
-        val outliers: Int,
-        val inlierRatio: Float,
-        val reprojectionError: Double,
-        val confidence: Float,
-        val usedRANSAC: Boolean,
-        val timestamp: Long = System.currentTimeMillis()
-    )
-
 
     enum class NavigationStatus {
         WAITING,
@@ -824,17 +573,11 @@ class RouteViewModel : ViewModel() {
     companion object {
         private const val TAG = "RouteViewModel"
         private const val FRAME_INTERVAL = 500L
-        private const val CONFIDENCE_THRESHOLD = 0.66f
+        private const val CONFIDENCE_THRESHOLD = 0.70f
         private const val STABILITY_DURATION = 3000L
         private const val LOST_TRACKING_DURATION = 10000L
-        private const val MIN_MATCHES = 3
-        private const val MIN_CONFIDENCE = 0.15f
-        private const val RATIO_THRESHOLD = 0.7f
-
-        // RANSAC Konfiguration
-        private const val MIN_MATCHES_FOR_RANSAC = 4
-        private const val RANSAC_THRESHOLD = 3.0  // Pixel Reprojection Error
-        private const val RANSAC_MAX_ITERATIONS = 2000
-        private const val RANSAC_CONFIDENCE = 0.995
+        private const val MIN_MATCHES = 5  // Reduziert von 8
+        private const val MIN_CONFIDENCE = 0.30f  // Reduziert von 0.35
+        private const val RATIO_THRESHOLD = 0.75f  // Erhöht von 0.65 (höher = lockerer!)
     }
 }
