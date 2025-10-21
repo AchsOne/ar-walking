@@ -2,30 +2,40 @@ package com.example.arwalking
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.opencv.android.Utils
-import org.opencv.core.*
-import org.opencv.features2d.AKAZE
-import org.opencv.features2d.DescriptorMatcher
-import org.opencv.imgproc.Imgproc
-import org.opencv.calib3d.Calib3d
-import org.opencv.core.Point
-import org.opencv.core.MatOfPoint2f
-import org.opencv.core.DMatch
-import org.opencv.core.Core
+import com.google.ar.core.Frame
+import com.google.ar.core.Session
+import com.example.arwalking.navigation.*
+import com.example.arwalking.managers.PositionTrackingManager
+import com.example.arwalking.managers.StepProgressionManager
+import com.example.arwalking.managers.LandmarkMatchingManager
+import com.example.arwalking.navigation.SmartStepProgressionManager
+import com.example.arwalking.navigation.ProgressionResult
+import com.example.arwalking.navigation.Vec3
 
+/**
+ * RouteViewModel using manager classes for better separation of concerns.
+ * Manages route loading, coordinates managers, and maintains state.
+ */
 class RouteViewModel : ViewModel() {
+    
+    companion object {
+        private const val TAG = "RouteViewModel"
+    }
 
+    // Manager instances
+    private val positionTrackingManager = PositionTrackingManager()
+    private val stepProgressionManager = StepProgressionManager()
+    private val landmarkMatchingManager = LandmarkMatchingManager()
+    private val smartStepProgressionManager = SmartStepProgressionManager()
+    
     // Route state
     private val _currentRoute = MutableStateFlow<NavigationRoute?>(null)
     val currentRoute: StateFlow<NavigationRoute?> = _currentRoute.asStateFlow()
@@ -33,37 +43,47 @@ class RouteViewModel : ViewModel() {
     private val _currentStep = MutableStateFlow(0)
     val currentStep: StateFlow<Int> = _currentStep.asStateFlow()
 
-    private val _completedSteps = MutableStateFlow<Set<Int>>(emptySet())
-    val completedSteps: StateFlow<Set<Int>> = _completedSteps.asStateFlow()
-
     private val _deletedSteps = MutableStateFlow<Set<Int>>(emptySet())
     val deletedSteps: StateFlow<Set<Int>> = _deletedSteps.asStateFlow()
 
+    private val _routePath = MutableStateFlow<RoutePath?>(null)
+    val routePath: StateFlow<RoutePath?> = _routePath.asStateFlow()
+    
+    private var routeBuilder: RouteBuilder = RouteBuilderImpl()
+    private var session: Session? = null
+
+    // State flows managed directly for compatibility
+    private val _completedSteps = MutableStateFlow<Set<Int>>(emptySet())
+    val completedSteps: StateFlow<Set<Int>> = _completedSteps.asStateFlow()
+    
     private val _navigationStatus = MutableStateFlow(NavigationStatus.WAITING)
     val navigationStatus: StateFlow<NavigationStatus> = _navigationStatus.asStateFlow()
-
-    // Feature matching state
+    
     private val _currentMatches = MutableStateFlow<List<LandmarkMatch>>(emptyList())
     val currentMatches: StateFlow<List<LandmarkMatch>> = _currentMatches.asStateFlow()
-
+    
     private val _isProcessing = MutableStateFlow(false)
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
-
+    
     private val _featureMappingEnabled = MutableStateFlow(false)
     val featureMappingEnabled: StateFlow<Boolean> = _featureMappingEnabled.asStateFlow()
+    
+    private val _arrowState = MutableStateFlow(ArrowController.ArrowState())
+    val arrowState: StateFlow<ArrowController.ArrowState> = _arrowState.asStateFlow()
+    
+    private val _userProgress = MutableStateFlow(0f)
+    val userProgress: StateFlow<Float> = _userProgress.asStateFlow()
+    
+    private val _distanceToNext = MutableStateFlow(Float.MAX_VALUE)
+    val distanceToNext: StateFlow<Float> = _distanceToNext.asStateFlow()
 
-    // Feature detection
-    private var detector: AKAZE? = null
-    private var matcher: DescriptorMatcher? = null
-    private val featuresCache = mutableMapOf<String, LandmarkFeatures>()
-    private val detectionHistory = mutableMapOf<String, DetectionHistory>()
+    fun setSession(arSession: Session) {
+        session = arSession
+    }
 
-    // Config
-    private var autoAdvanceThreshold = 0.50f
-    private var lastProcessedTime = 0L
-    private var frameCounter = 0
-
-
+    /**
+     * Load route from JSON asset
+     */
     fun loadRoute(context: Context): NavigationRoute? {
         return try {
             val json = context.assets.open("route.json")
@@ -79,6 +99,13 @@ class RouteViewModel : ViewModel() {
 
             val pathItem = routeData.route.path[0]
             val steps = pathItem.routeParts.mapIndexed { index, part ->
+                // Calculate expected walking distance from edge lengths
+                val walkDistance = part.nodes?.sumOf { nodeWrapper -> 
+                    nodeWrapper.edge?.lengthInMeters?.toDoubleOrNull() ?: 0.0 
+                } ?: 0.0
+                
+                Log.d(TAG, "Step $index: ${part.instructionDe} - Expected distance: ${"%.2f".format(walkDistance)}m (${part.landmarks.size} landmarks)")
+                
                 NavigationStep(
                     stepNumber = index,
                     instruction = part.instructionDe,
@@ -86,6 +113,7 @@ class RouteViewModel : ViewModel() {
                     floor = pathItem.levelInfo?.storey?.toIntOrNull() ?: 0,
                     landmarks = part.landmarks,
                     distance = part.distance ?: 0.0,
+                    expectedWalkDistance = walkDistance,
                     estimatedTime = part.duration ?: 0
                 )
             }
@@ -111,12 +139,197 @@ class RouteViewModel : ViewModel() {
             )
 
             _currentRoute.value = route
+            
+            // Reset to step 0 when loading new route
+            _currentStep.value = 0
+            _completedSteps.value = emptySet()
+            _navigationStatus.value = NavigationStatus.WAITING
+            smartStepProgressionManager.reset()
+            Log.d(TAG, "Route state reset: currentStep=0, completedSteps=[], status=WAITING")
+            
+            // Build navigation route path and initialize position tracking
+            val routePath = routeBuilder.buildFromJson(routeData)
+            if (routePath != null) {
+                _routePath.value = routePath
+                viewModelScope.launch {
+                    positionTrackingManager.initializeComponents(routePath)
+                }
+                Log.d(TAG, "Navigation route built: ${routePath.vertices.size} vertices, ${routePath.totalLength}m, ${routePath.maneuvers.size} maneuvers")
+            } else {
+                Log.w(TAG, "Failed to build navigation route path")
+            }
+            
+            // Initialize landmark matching with route context
+            landmarkMatchingManager.initializeFeatureDetection()
+            // Pre-load landmark features for the route
+            viewModelScope.launch {
+                landmarkMatchingManager.preloadLandmarkFeatures(route, context)
+            }
+            
             Log.d(TAG, "Route loaded: ${steps.size} steps, ${route.totalLength}m")
             route
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load route", e)
             null
         }
+    }
+
+    /**
+     * Enable/disable feature mapping
+     */
+    fun setFeatureMappingEnabled(enabled: Boolean) {
+        _featureMappingEnabled.value = enabled
+        landmarkMatchingManager.setFeatureMappingEnabled(enabled)
+    }
+
+    /**
+     * Process camera frame for landmark detection and navigation updates
+     * Simplified version that maintains compatibility
+     */
+    suspend fun processFrame(bitmap: Bitmap, context: Context) {
+        if (!_featureMappingEnabled.value) return
+        
+        _isProcessing.value = true
+        
+        try {
+            // Basic landmark matching using manager
+            landmarkMatchingManager.processFrame(
+                bitmap = bitmap,
+                currentRoute = _currentRoute.value,
+                context = context,
+                onProgressUpdate = { matches ->
+                    // Convert matches and update state
+                    val convertedMatches = matches.map { match ->
+                        LandmarkMatch(match.landmark, match.matchCount, match.confidence, match.distance)
+                    }
+                    _currentMatches.value = convertedMatches
+                    
+                    // Smart step progression with landmark + distance tracking
+                    // This will be called from updatePosition with actual ARCore position
+                    
+                    // Debug: Log matches
+                    if (convertedMatches.isNotEmpty()) {
+                        val best = convertedMatches.first()
+                        Log.d(TAG, "🎯 Match found: ${best.landmark.id} with ${(best.confidence * 100).toInt()}% confidence (${best.matchCount} matches)")
+                    }
+                }
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Frame processing failed", e)
+        } finally {
+            _isProcessing.value = false
+        }
+    }
+
+    /**
+     * Update position based on ARCore frame
+     */
+    suspend fun updatePosition(frame: Frame) {
+        try {
+            positionTrackingManager.updatePosition(
+                frame = frame,
+                currentStep = _currentStep.value,
+                currentRoute = _currentRoute.value,
+                hasLandmarkMatches = _currentMatches.value.isNotEmpty()
+            )
+            
+            // Sync state from position manager
+            _userProgress.value = positionTrackingManager.getCurrentProgress()
+            
+            // Smart step progression using ARCore position
+            val cameraPose = frame.camera.pose
+            val currentPosition = Vec3(
+                cameraPose.translation[0],
+                cameraPose.translation[1], 
+                cameraPose.translation[2]
+            )
+            
+            val progressionResult = smartStepProgressionManager.analyzeStepProgression(
+                currentStep = _currentStep.value,
+                currentRoute = _currentRoute.value,
+                landmarkMatches = _currentMatches.value,
+                currentPosition = currentPosition
+            )
+            
+            when (progressionResult) {
+                is ProgressionResult.AdvanceToStep -> {
+                    val currentStep = _currentStep.value
+                    _currentStep.value = progressionResult.newStep
+                    _completedSteps.value = _completedSteps.value + currentStep
+                    _navigationStatus.value = NavigationStatus.STEP_COMPLETED
+                    smartStepProgressionManager.onStepAdvanced(progressionResult.newStep)
+                    
+                    Log.d(TAG, "✅ Step advanced: $currentStep -> ${progressionResult.newStep} (${progressionResult.reason})")
+                    
+                    // Log distance stats
+                    val stats = smartStepProgressionManager.getDistanceStats()
+                    Log.d(TAG, "📊 Distance stats: step=${String.format("%.2f", stats.currentStepDistance)}m, total=${String.format("%.2f", stats.totalDistance)}m")
+                }
+                is ProgressionResult.NoAdvance -> {
+                    Log.v(TAG, "🔄 No advance: ${progressionResult.reason}")
+                    
+                    // Log current step progress
+                    val currentRoute = _currentRoute.value
+                    val currentStep = _currentStep.value
+                    if (currentRoute != null && currentStep < currentRoute.steps.size) {
+                        val step = currentRoute.steps[currentStep]
+                        val stepProgress = smartStepProgressionManager.getCurrentStepProgress()
+                        val progressPercent = smartStepProgressionManager.getStepProgressPercent(step.expectedWalkDistance)
+                        Log.v(TAG, "📍 Step progress: ${String.format("%.2f", stepProgress)}m / ${String.format("%.2f", step.expectedWalkDistance)}m (${String.format("%.1f", progressPercent)}%)")
+                    }
+                }
+            }
+            
+        } catch (e: Exception) {
+            Log.w(TAG, "Position update failed", e)
+        }
+    }
+
+    /**
+     * Skip current step (for testing/debugging)
+     */
+    fun skipStep() {
+        val currentRoute = _currentRoute.value ?: return
+        val currentStep = _currentStep.value
+        val nextStep = currentStep + 1
+        
+        if (nextStep < currentRoute.steps.size) {
+            _currentStep.value = nextStep
+            _completedSteps.value = _completedSteps.value + currentStep
+            _navigationStatus.value = NavigationStatus.STEP_COMPLETED
+            Log.d(TAG, "Step manually skipped: $currentStep -> $nextStep")
+        }
+    }
+
+    /**
+     * Start processing (for compatibility)
+     */
+    fun startProcessing() {
+        Log.d(TAG, "Frame processing started")
+    }
+    
+    /**
+     * Log route information (for compatibility)
+     */
+    fun logRoute(route: NavigationRoute) {
+        Log.d(TAG, "Route loaded: ${route.name} with ${route.steps.size} steps")
+    }
+    
+    /**
+     * Initialize feature mapping (for compatibility)
+     */
+    fun initFeatureMapping(context: Context) {
+        setFeatureMappingEnabled(true)
+        
+        // Pre-load landmark features if route is available
+        val route = _currentRoute.value
+        if (route != null) {
+            viewModelScope.launch {
+                landmarkMatchingManager.preloadLandmarkFeatures(route, context)
+            }
+        }
+        
+        Log.d(TAG, "Feature mapping initialized")
     }
 
     private fun extractLocation(instruction: String, isStart: Boolean): String {
@@ -138,411 +351,26 @@ class RouteViewModel : ViewModel() {
         }
     }
 
-    fun logRoute(route: NavigationRoute) {
-        Log.d(TAG, "=== Route Details ===")
-        Log.d(TAG, "From: ${route.startPoint}")
-        Log.d(TAG, "To: ${route.endPoint}")
-        Log.d(TAG, "Distance: ${route.totalDistance}m")
-        Log.d(TAG, "Steps: ${route.steps.size}")
-
-        route.steps.forEachIndexed { index, step ->
-            Log.d(TAG, "Step ${index + 1}: ${step.instruction}")
-            if (step.landmarks.isNotEmpty()) {
-                Log.d(TAG, "  Landmarks: ${step.landmarks.size}")
-            }
-        }
-    }
-
-    fun skipStep() {
-        val route = _currentRoute.value ?: return
-        val current = _currentStep.value
-        val lastIndex = route.steps.lastIndex
-
-        _deletedSteps.value = _deletedSteps.value + current
-        Log.d(TAG, "Step $current skipped")
-
-        if (current < lastIndex) {
-            _currentStep.value = current + 1
-            _navigationStatus.value = NavigationStatus.STEP_COMPLETED
-        } else {
-            _navigationStatus.value = NavigationStatus.ROUTE_COMPLETED
-        }
-
-        detectionHistory.clear()
-    }
-
-    fun initFeatureMapping(context: Context) {
-        viewModelScope.launch(Dispatchers.Default) {
-            try {
-                detector = AKAZE.create()
-                matcher = DescriptorMatcher.create(DescriptorMatcher.BRUTEFORCE_HAMMING)
-
-                loadLandmarkFeatures(context)
-
-                _featureMappingEnabled.value = true
-                Log.d(TAG, "Feature mapping initialized (${featuresCache.size} landmarks)")
-            } catch (e: Exception) {
-                Log.e(TAG, "Feature mapping init failed", e)
-                _featureMappingEnabled.value = false
-            }
-        }
-    }
-
-    private suspend fun loadLandmarkFeatures(context: Context) = withContext(Dispatchers.IO) {
-        try {
-            val landmarks = getLandmarks()
-
-            landmarks.forEach { landmark ->
-                try {
-                    val bitmap = loadBitmap(context, landmark.id)
-                    if (bitmap != null) {
-                        val features = extractFeatures(bitmap, landmark.id)
-                        if (features != null) {
-                            featuresCache[landmark.id] = features
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to load landmark ${landmark.id}")
-                }
-            }
-
-            Log.d(TAG, "Loaded ${featuresCache.size}/${landmarks.size} landmark features")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to load landmark features", e)
-        }
-    }
-
-    private fun loadBitmap(context: Context, landmarkId: String): Bitmap? {
-        return try {
-            context.assets.open("landmark_images/$landmarkId.jpg").use {
-                BitmapFactory.decodeStream(it)
-            }
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    private fun extractFeatures(bitmap: Bitmap, id: String): LandmarkFeatures? {
-        return try {
-            val mat = Mat()
-            Utils.bitmapToMat(bitmap, mat)
-
-            val gray = Mat()
-            Imgproc.cvtColor(mat, gray, Imgproc.COLOR_BGR2GRAY)
-
-            val keypoints = MatOfKeyPoint()
-            val descriptors = Mat()
-            detector?.detectAndCompute(gray, Mat(), keypoints, descriptors)
-
-            mat.release()
-            gray.release()
-
-            if (keypoints.rows() > 0) {
-                LandmarkFeatures(id, keypoints, descriptors)
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Feature extraction failed for $id", e)
-            null
-        }
-    }
-
-    fun processFrame(bitmap: Bitmap) {
-        if (!_featureMappingEnabled.value || _isProcessing.value) return
-
-        val now = System.currentTimeMillis()
-        if (now - lastProcessedTime < FRAME_INTERVAL) return
-
-        frameCounter++
-        lastProcessedTime = now
-
-        viewModelScope.launch(Dispatchers.Default) {
-            _isProcessing.value = true
-
-            try {
-                val frameFeatures = extractFrameFeatures(bitmap)
-
-                if (frameFeatures != null) {
-                    val matches = matchLandmarks(frameFeatures)
-                    _currentMatches.value = matches
-
-                    analyzeProgression(matches)
-
-                    frameFeatures.keypoints.release()
-                    frameFeatures.descriptors.release()
-                } else {
-                    _currentMatches.value = emptyList()
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Frame processing failed", e)
-                _currentMatches.value = emptyList()
-            } finally {
-                _isProcessing.value = false
-            }
-        }
-    }
-
-    private fun extractFrameFeatures(bitmap: Bitmap): LandmarkFeatures? {
-        return try {
-            val mat = Mat()
-            Utils.bitmapToMat(bitmap, mat)
-
-            val gray = Mat()
-            Imgproc.cvtColor(mat, gray, Imgproc.COLOR_BGR2GRAY)
-
-            val keypoints = MatOfKeyPoint()
-            val descriptors = Mat()
-            detector?.detectAndCompute(gray, Mat(), keypoints, descriptors)
-
-            mat.release()
-            gray.release()
-
-            if (keypoints.rows() > 0) {
-                LandmarkFeatures("frame", keypoints, descriptors)
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Frame feature extraction failed", e)
-            null
-        }
-    }
-
-    private fun matchLandmarks(frameFeatures: LandmarkFeatures): List<LandmarkMatch> {
-        val matches = mutableListOf<LandmarkMatch>()
-
-        try {
-            val allLandmarks = getLandmarks()
-
-            allLandmarks.forEach { landmark ->
-                val landmarkFeatures = featuresCache[landmark.id]
-                if (landmarkFeatures != null) {
-                    val result = matchFeatures(frameFeatures, landmarkFeatures)
-
-                    if (result.matchCount >= MIN_MATCHES && result.confidence >= MIN_CONFIDENCE) {
-                        matches.add(result)
-                    }
-                }
-            }
-
-            return matches.sortedByDescending { it.confidence }
-        } catch (e: Exception) {
-            Log.e(TAG, "Landmark matching failed", e)
-            return emptyList()
-        }
-    }
-
-    private fun matchFeatures(frame: LandmarkFeatures, landmark: LandmarkFeatures): LandmarkMatch {
-        try {
-            if (frame.descriptors.rows() == 0 || landmark.descriptors.rows() == 0) {
-                return createEmptyMatch(landmark.id)
-            }
-
-            val knnMatches = mutableListOf<MatOfDMatch>()
-            matcher?.knnMatch(frame.descriptors, landmark.descriptors, knnMatches, 2)
-
-            var goodMatches = 0
-            var totalDistance = 0f
-
-            knnMatches.forEach { match ->
-                val arr = match.toArray()
-                if (arr.size >= 2) {
-                    val m = arr[0]
-                    val n = arr[1]
-                    if (m.distance < RATIO_THRESHOLD * n.distance) {
-                        goodMatches++
-                        totalDistance += m.distance
-                    }
-                }
-            }
-
-            val avgDistance = if (goodMatches > 0) totalDistance / goodMatches else Float.MAX_VALUE
-            val minKeypoints = minOf(frame.keypoints.rows(), landmark.keypoints.rows())
-
-            val confidence = if (goodMatches > 0) {
-                when {
-                    minKeypoints <= 15 -> (goodMatches.toFloat() / 8f).coerceAtMost(1f)
-                    else -> {
-                        val matchRatio = goodMatches.toFloat() / minKeypoints
-                        val qualityScore = (goodMatches.toFloat() / 15f).coerceAtMost(1f)
-                        val distanceScore = if (avgDistance != Float.MAX_VALUE) {
-                            (100f / (avgDistance + 1f)).coerceIn(0f, 1f)
-                        } else 0f
-
-                        (matchRatio * 0.4f + qualityScore * 0.4f + distanceScore * 0.2f).coerceIn(0f, 1f)
-                    }
-                }
-            } else 0f
-
-            knnMatches.forEach { it.release() }
-
-            val landmarkData = getLandmarks().find { it.id == landmark.id }
-                ?: RouteLandmarkData(landmark.id)
-
-            return LandmarkMatch(landmarkData, goodMatches, confidence, avgDistance)
-        } catch (e: Exception) {
-            Log.e(TAG, "Feature matching failed", e)
-            return createEmptyMatch(landmark.id)
-        }
-    }
-
-    private fun analyzeProgression(matches: List<LandmarkMatch>) {
-        if (matches.isEmpty()) {
-            handleNoDetection()
-            return
-        }
-
-        val current = _currentStep.value
-        val expectedIds = getExpectedLandmarks(current).map { it.id }.toSet()
-        val strongMatch = matches.firstOrNull {
-            it.landmark.id in expectedIds && it.confidence >= autoAdvanceThreshold &&
-                    it.matchCount >= 6
-        }
-
-        val routeSize = _currentRoute.value?.steps?.size ?: 0
-        if (strongMatch != null && current < routeSize - 1) {
-            transitionStep(current, current + 1, "auto_${strongMatch.landmark.id}", strongMatch.confidence)
-            return
-        }
-
-        val now = System.currentTimeMillis()
-        val best = matches.first()
-        val targetStep = findStepForLandmark(best.landmark.id)
-
-        if (targetStep == -1) return
-
-        updateHistory(best.landmark.id, targetStep, best.confidence, now)
-
-        val history = detectionHistory[best.landmark.id]
-        if (history?.isStable == true && best.confidence >= CONFIDENCE_THRESHOLD) {
-            handleTransition(targetStep, best.confidence, "landmark_${best.landmark.id}")
-        }
-    }
-
-    private fun findStepForLandmark(landmarkId: String): Int {
-        val route = _currentRoute.value ?: return -1
-        route.steps.forEachIndexed { index, step ->
-            if (step.landmarks.any { it.id == landmarkId }) return index
-        }
-        return -1
-    }
-
-    private fun updateHistory(id: String, step: Int, confidence: Float, time: Long) {
-        val existing = detectionHistory[id]
-
-        if (existing == null) {
-            detectionHistory[id] = DetectionHistory(id, step, time, time, confidence, false)
-        } else {
-            existing.lastDetectionTime = time
-            existing.highestConfidence = maxOf(existing.highestConfidence, confidence)
-
-            val duration = time - existing.firstDetectionTime
-            if (duration >= STABILITY_DURATION && confidence >= CONFIDENCE_THRESHOLD) {
-                existing.isStable = true
-            }
-        }
-    }
-
-    private fun handleTransition(target: Int, confidence: Float, trigger: String) {
-        val current = _currentStep.value
-        if (target == current) return
-
-        val distance = kotlin.math.abs(target - current)
-        val proximityScore = when {
-            distance == 1 -> 1.0f
-            distance <= 2 -> 0.7f
-            else -> 0.3f
-        }
-
-        val historyScore = if (target > current) 0.9f else 0.6f
-        val confidenceBonus = if (confidence >= 0.70f) 0.1f else 0f
-        val score = (confidence * 0.6f) + (proximityScore * 0.3f) + (historyScore * 0.1f) + confidenceBonus
-
-        val required = when {
-            distance == 1 -> 0.65f
-            distance <= 3 -> 0.70f
-            distance <= 5 -> 0.72f
-            else -> 0.75f
-        }
-
-        if (score >= required) {
-            transitionStep(current, target, trigger, confidence)
-        }
-    }
-
-    private fun transitionStep(from: Int, to: Int, trigger: String, confidence: Float) {
-        if (to > from) {
-            val completed = _completedSteps.value.toMutableSet()
-            for (step in from until to) {
-                completed.add(step)
-            }
-            _completedSteps.value = completed
-        }
-
-        _currentStep.value = to
-        _navigationStatus.value = NavigationStatus.STEP_COMPLETED
-        detectionHistory.clear()
-
-        Log.d(TAG, "Step transition: $from -> $to ($trigger, ${(confidence * 100).toInt()}%)")
-    }
-
-    private fun handleNoDetection() {
-        val now = System.currentTimeMillis()
-        val lastDetection = detectionHistory.values.maxByOrNull { it.lastDetectionTime }
-
-        if (lastDetection != null) {
-            val timeSince = now - lastDetection.lastDetectionTime
-            if (timeSince > LOST_TRACKING_DURATION) {
-                if (_navigationStatus.value != NavigationStatus.LOST_TRACKING) {
-                    _navigationStatus.value = NavigationStatus.LOST_TRACKING
-                }
-            }
-        }
-    }
-
-    fun startProcessing() {
-        Log.d(TAG, "Frame processing started")
-    }
-
-    private fun getLandmarks(): List<RouteLandmarkData> {
-        val route = _currentRoute.value ?: return emptyList()
-        return route.steps.flatMap { it.landmarks }.distinctBy { it.id }
-    }
-
-    private fun getExpectedLandmarks(stepNumber: Int): List<RouteLandmarkData> {
-        val route = _currentRoute.value ?: return emptyList()
-        if (stepNumber !in route.steps.indices) return emptyList()
-        return route.steps[stepNumber].landmarks
-    }
-
-    private fun createEmptyMatch(landmarkId: String): LandmarkMatch {
-        val landmark = getLandmarks().find { it.id == landmarkId }
-            ?: RouteLandmarkData(landmarkId)
-        return LandmarkMatch(landmark, 0, 0f, Float.MAX_VALUE)
-    }
-
     override fun onCleared() {
         super.onCleared()
-
-        detector = null
-        matcher = null
-
-        featuresCache.values.forEach { features ->
-            try {
-                features.keypoints.release()
-                features.descriptors.release()
-            } catch (e: Exception) {
-                // Ignore
-            }
+        
+        // Clean up managers
+        try {
+            positionTrackingManager.cleanup()
+            landmarkMatchingManager.cleanup()
+        } catch (e: Exception) {
+            Log.w(TAG, "Manager cleanup failed", e)
         }
-        featuresCache.clear()
+        
+        session = null
+        Log.d(TAG, "RouteViewModel cleared")
     }
 
+    // Legacy data classes for compatibility (should eventually be moved to shared package)
     data class LandmarkFeatures(
         val id: String,
-        val keypoints: MatOfKeyPoint,
-        val descriptors: Mat
+        val keypoints: org.opencv.core.MatOfKeyPoint,
+        val descriptors: org.opencv.core.Mat
     )
 
     data class LandmarkMatch(
@@ -560,7 +388,11 @@ class RouteViewModel : ViewModel() {
         var highestConfidence: Float = 0f,
         var isStable: Boolean = false
     )
-
+    
+    data class SmartStartResult(
+        val targetStep: Int,
+        val match: LandmarkMatch
+    )
 
     enum class NavigationStatus {
         WAITING,
@@ -568,16 +400,5 @@ class RouteViewModel : ViewModel() {
         STEP_COMPLETED,
         LOST_TRACKING,
         ROUTE_COMPLETED
-    }
-
-    companion object {
-        private const val TAG = "RouteViewModel"
-        private const val FRAME_INTERVAL = 500L
-        private const val CONFIDENCE_THRESHOLD = 0.70f
-        private const val STABILITY_DURATION = 3000L
-        private const val LOST_TRACKING_DURATION = 10000L
-        private const val MIN_MATCHES = 5  // Reduziert von 8
-        private const val MIN_CONFIDENCE = 0.30f  // Reduziert von 0.35
-        private const val RATIO_THRESHOLD = 0.75f  // Erhöht von 0.65 (höher = lockerer!)
     }
 }

@@ -22,6 +22,7 @@ data class NavigationStep(
     val landmarks: List<RouteLandmarkData> = emptyList(),
     val landmarkIds: List<String> = emptyList(), // Nur die IDs der Landmarks
     val distance: Double = 0.0,
+    val expectedWalkDistance: Double = 0.0, // NEU: aus lengthInMeters der JSON edges
     val estimatedTime: Int = 0
 ) {
     // Computed property to get landmark IDs from landmarks

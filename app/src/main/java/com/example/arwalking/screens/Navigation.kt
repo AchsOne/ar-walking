@@ -82,9 +82,18 @@ fun CameraScreen(
     val routeViewModel: RouteViewModel = viewModel()
 
     LaunchedEffect(Unit) {
-        routeViewModel.loadRoute(context)
-        routeViewModel.initFeatureMapping(context)
-        routeViewModel.startProcessing()
+        try {
+            val route = routeViewModel.loadRoute(context)
+            if (route != null) {
+                routeViewModel.logRoute(route)
+                routeViewModel.initFeatureMapping(context)
+                routeViewModel.startProcessing()
+            } else {
+                Log.e("CameraScreen", "Failed to load route")
+            }
+        } catch (e: Exception) {
+            Log.e("CameraScreen", "Error initializing RouteViewModel", e)
+        }
     }
 
     val currentRoute by routeViewModel.currentRoute.collectAsState()
@@ -243,7 +252,8 @@ private fun NavigationOverlay(
         } ?: emptyList()
 
         val currentStepNumber by routeViewModel.currentStep.collectAsState()
-        val visibleSteps = navigationSteps.drop(currentStepNumber)
+        val safeStepNumber = maxOf(0, currentStepNumber)  // Prevent negative values
+        val visibleSteps = navigationSteps.drop(safeStepNumber)
 
         NavigationDrawer(
             navigationSteps = visibleSteps,

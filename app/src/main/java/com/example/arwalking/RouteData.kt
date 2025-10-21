@@ -69,7 +69,8 @@ data class RoutePart(
 )
 
 data class NodeWrapper(
-    val node: NodeData
+    val node: NodeData,
+    val edge: EdgeData? = null
 )
 
 data class NodeData(
@@ -89,6 +90,20 @@ data class RouteLandmarkData(
     val type: String? = null,
     val x: Double? = null,
     val y: Double? = null
+)
+
+data class EdgeData(
+    val dx: String?,
+    val dy: String?,
+    val cx: String?,
+    val cy: String?,
+    val ax: String?,
+    val ay: String?,
+    val bx: String?,
+    val by: String?,
+    val lengthInMeters: String?,
+    val id: String?,
+    val type: String?
 )
 
 data class RouteInfo(

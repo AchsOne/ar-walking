@@ -43,6 +43,8 @@ import com.google.ar.core.Pose
 import org.opencv.android.Utils
 import org.opencv.core.CvType
 import org.opencv.core.Mat
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 
 /**
  * ARCoreArrowView
@@ -69,19 +71,10 @@ fun ARCoreArrowView(
     var asvRef by androidx.compose.runtime.remember { mutableStateOf<ArSceneView?>(null) }
     var sessionConfigured by androidx.compose.runtime.remember { mutableStateOf(false) }
 
-    // Latching: keep last successful landmark and yaw until a new landmark or goal
-    var latchedLandmarkId by remember { mutableStateOf<String?>(null) }
-    var latchedYaw by remember { mutableStateOf(0f) }
-
-    // Observe matches state (used for UI/derivations); recognition will be evaluated per-frame to avoid staleness
-    val matches by routeViewModel.currentMatches.collectAsState()
-
-    // Track chosen direction based on JSON navigation steps and recognized landmark
-    val currentStepIndex by routeViewModel.currentStep.collectAsState()
-    val currentRoute by routeViewModel.currentRoute.collectAsState()
-    val steps = currentRoute?.steps ?: emptyList()
-    val currentInstruction = steps.getOrNull(currentStepIndex)?.instruction ?: ""
+    // Navigation state
+    val arrowState by routeViewModel.arrowState.collectAsState()
     val isEnabled by routeViewModel.featureMappingEnabled.collectAsState()
+    val matches by routeViewModel.currentMatches.collectAsState()
 
     // Get camera permission state from context
     val hasCameraPermission = remember {
@@ -90,19 +83,6 @@ fun ARCoreArrowView(
             android.Manifest.permission.CAMERA
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
     }
-
-    // Prefer instruction of the step containing the top recognized landmark
-    val topMatch = matches.maxByOrNull { it.confidence }
-    val stepInstructionForBestMatch = topMatch?.let { bm ->
-        val idx = steps.indexOfFirst { s -> s.landmarks.any { it.id == bm.landmark.id } }
-        if (idx >= 0) steps[idx].instruction else null
-    }
-    val chosenInstruction = when {
-        !stepInstructionForBestMatch.isNullOrBlank() -> stepInstructionForBestMatch
-        currentInstruction.isNotBlank() -> currentInstruction
-        else -> ""
-    }
-    val directionDeg = instructionToYaw(chosenInstruction)
 
     AndroidView(
         modifier = modifier,
@@ -117,117 +97,158 @@ fun ARCoreArrowView(
             arSceneView.tag = controller
 
             arSceneView.scene.addOnUpdateListener { _ ->
-                Log.d("ARCoreArrow", "Scene tick")
                 val frame = arSceneView.arFrame ?: return@addOnUpdateListener
-                val controller = (arSceneView.tag as? ArrowController) ?: ArrowController(arSceneView.context).also { arSceneView.tag = it }
-                controller.attachTo(arSceneView.scene)
+                val session = arSceneView.session ?: return@addOnUpdateListener
+                
+                try {
+                    Log.v("ARCoreArrow", "Scene tick")
+                    
+                    val controller = (arSceneView.tag as? ArrowController) ?: ArrowController(arSceneView.context).also { arSceneView.tag = it }
+                    controller.attachTo(arSceneView.scene)
+                    
+                    // Diagnostic: camera tracking state, planes, recognition
+                    val camState = frame.camera.trackingState
+                    val planesAllDiag = session.getAllTrackables(Plane::class.java)
+                    val trackedCountDiag = planesAllDiag.count { plane -> plane.trackingState == TrackingState.TRACKING }
+                    val matchesNow = try { routeViewModel.currentMatches.value } catch (_: Exception) { emptyList() }
+                    val top = matchesNow.firstOrNull()
+                    val recognizedNow = top?.let { 
+                        it.matchCount >= MIN_MATCHES_FOR_ARROW && it.confidence >= MIN_CONFIDENCE_FOR_ARROW 
+                    } == true
+                    val topInfo = top?.let { 
+                        val conf = (it.confidence * 100).toInt()
+                        val status = if (it.confidence >= MIN_CONFIDENCE_FOR_ARROW) "✓" else "✗"
+                        "${it.landmark.id} ${it.matchCount}m ${conf}% ${status}"
+                    } ?: "none"
+                    val anchorSet = controller.isAnchored()
+                    val dbg = "cam=${camState}, planes=${trackedCountDiag}, matches=${matchesNow.size}, top=${topInfo}, anchor=${anchorSet}"
+                    Log.v("ARCoreArrow", "Tick diag: ${dbg}")
+                } catch (e: Exception) {
+                    Log.e("ARCoreArrow", "Scene update error: ${e.message}", e)
+                    return@addOnUpdateListener
+                }
 
-                // Diagnostic: camera tracking state, planes, recognition
-                val camState = frame.camera.trackingState
-                val planesAllDiag = arSceneView.session?.getAllTrackables(Plane::class.java) ?: emptyList()
-                val trackedCountDiag = planesAllDiag.count { it.trackingState == TrackingState.TRACKING }
-                val matchesNow = try { routeViewModel.currentMatches.value } catch (_: Exception) { emptyList() }
-                val top = matchesNow.firstOrNull()
-                val recognizedNow = top?.let { 
-                    it.matchCount >= MIN_MATCHES_FOR_ARROW && it.confidence >= MIN_CONFIDENCE_FOR_ARROW 
-                } == true
-                val topInfo = top?.let { 
-                    val conf = (it.confidence * 100).toInt()
-                    val status = if (it.confidence >= MIN_CONFIDENCE_FOR_ARROW) "✓" else "✗"
-                    "${it.landmark.id} ${it.matchCount}m ${conf}% ${status}"
-                } ?: "none"
-                val anchorSet = controller.isAnchored()
-                val dbg = "cam=${camState}, planes=${trackedCountDiag}, matches=${matchesNow.size}, top=${topInfo}, anchor=${anchorSet}"
-                Log.d("ARCoreArrow", "Tick diag: ${dbg}")
-
-                // Only continue when ARCore tracking is active
-                if (camState != TrackingState.TRACKING) {
-                    Log.d("ARCoreArrow", "Arrow not processed: camera not TRACKING (${camState})")
+                // Only continue when ARCore tracking is active  
+                val currentCamState = try { frame.camera.trackingState } catch (e: Exception) { TrackingState.STOPPED }
+                if (currentCamState != TrackingState.TRACKING) {
+                    Log.v("ARCoreArrow", "Arrow not processed: camera not TRACKING (${currentCamState})")
                     return@addOnUpdateListener
                 }
 
                 // 1) Feed frame to OpenCV feature mapping using raw ARCore camera image (YUV_420_888)
                 if (hasCameraPermission && isEnabled) {
-                    tryAcquireCameraImage(frame, routeViewModel)
+                    try {
+                        tryAcquireCameraImage(frame, routeViewModel, arSceneView.context)
+                    } catch (e: Exception) {
+                        Log.w("ARCoreArrow", "Camera image processing error: ${e.message}")
+                    }
                 }
 
-                // 2) Pfeil wird nur gezeichnet wenn eine Landmarke erkannt wurde
-                // Feature mapping muss aktiviert sein
+                // 2) New route-based arrow logic
+                val controller = (arSceneView.tag as? ArrowController) ?: return@addOnUpdateListener
                 if (!isEnabled) {
-                    Log.d("ARCoreArrow", "Arrow hidden: feature mapping disabled")
+                    Log.v("ARCoreArrow", "Arrow hidden: feature mapping disabled")
                     controller.clear()
                     return@addOnUpdateListener
                 }
                 
-                // Pfeil nur anzeigen wenn aktuell eine Landmarke erkannt wird
-                // Wenn keine Erkennung: latched arrow beibehalten (wie gewünscht)
-                if (!recognizedNow) {
-                    if (controller.isAnchored()) {
-                        Log.d("ARCoreArrow", "Keep latched arrow: recognition lost; landmark=${latchedLandmarkId}, yaw=${"%.1f".format(latchedYaw)}")
-                        // Bestehenden Pfeil beibehalten, aber Richtung basierend auf aktueller Route aktualisieren
-                        val currentYaw = instructionToYaw(currentInstruction)
-                        if (currentYaw != latchedYaw && currentInstruction.isNotBlank()) {
-                            latchedYaw = currentYaw
-                            controller.updateYaw(latchedYaw)
-                            Log.d("ARCoreArrow", "Updated arrow direction based on current step: yaw=${"%.1f".format(latchedYaw)}")
-                        }
-                    } else {
-                        Log.d("ARCoreArrow", "No recognition and no existing anchor; arrow remains hidden")
-                        controller.clear()
+                // Update position for smart step progression (async)
+                kotlinx.coroutines.GlobalScope.launch {
+                    try {
+                        routeViewModel.updatePosition(frame)
+                    } catch (e: Exception) {
+                        Log.w("ARCoreArrow", "updatePosition failed: ${e.message}")
                     }
+                }
+                
+                // Route-based arrow logic with persistent anchoring
+                val currentStep = routeViewModel.currentStep.value
+                val currentRoute = routeViewModel.currentRoute.value
+                
+                if (currentRoute == null || currentStep >= currentRoute.steps.size) {
+                    controller.clear()
                     return@addOnUpdateListener
                 }
-
-                // ========================================
-                // Camera-Relative Platzierung (Option 1)
-                // ========================================
-
-                // Update latched state wenn Landmark erkannt
-                topMatch?.let { tm ->
-                    val newLandmarkId = tm.landmark.id
-                    val newYaw = directionDeg
-
-                    if (latchedLandmarkId != newLandmarkId) {
-                        latchedLandmarkId = newLandmarkId
-                        latchedYaw = newYaw
-                        Log.d("ARCoreArrow", "New landmark: $newLandmarkId, yaw=${"%.1f".format(latchedYaw)}")
-                    } else if (newYaw != latchedYaw) {
-                        latchedYaw = newYaw
-                        Log.d("ARCoreArrow", "Direction updated for $newLandmarkId: yaw=${"%.1f".format(latchedYaw)}")
+                
+                val step = currentRoute.steps[currentStep]
+                val instruction = step.instruction
+                
+                // Determine if we should show arrow based on step type and conditions
+                // RULE: Arrow only visible when feature mapping is enabled AND conditions are met
+                val shouldShowArrow = when {
+                    // Landmark-based steps: show only when we detect the landmark with good confidence
+                    step.landmarks.isNotEmpty() -> {
+                        val matches = try { routeViewModel.currentMatches.value } catch (e: Exception) { emptyList() }
+                        val hasGoodMatch = matches.isNotEmpty() && matches.first().confidence >= MIN_CONFIDENCE_FOR_ARROW
+                        Log.d("ARCoreArrow", "Landmark step $currentStep: ${matches.size} matches, best=${matches.firstOrNull()?.let { "${(it.confidence*100).toInt()}%" } ?: "none"}, show=$hasGoodMatch")
+                        hasGoodMatch
+                    }
+                    // Direction-based steps (no landmarks): show when feature mapping is active
+                    // This ensures the user has started the AR session properly
+                    else -> {
+                        val featureMappingActive = try { routeViewModel.featureMappingEnabled.value } catch (e: Exception) { false }
+                        Log.d("ARCoreArrow", "Direction step $currentStep: '${instruction}' - feature mapping active: $featureMappingActive, show=$featureMappingActive")
+                        featureMappingActive
                     }
                 }
+                
+                if (!shouldShowArrow) {
+                    Log.v("ARCoreArrow", "Arrow conditions not met for step $currentStep")
+                    return@addOnUpdateListener
+                }
+                
+                // ========================================
+                // Direction Calculation Based on Instruction
+                // ========================================
+                
+                val targetYaw = calculateArrowDirection(instruction)
+                Log.d("ARCoreArrow", "Arrow visible: step=$currentStep, instruction='$instruction', yaw=${"%.1f".format(targetYaw)}°")
 
-                // Platziere oder update Pfeil
-                if (!controller.isAnchored()) {
-                    // Noch kein Pfeil → erstelle camera-relative Anchor
-                    val cameraPose = frame.camera.pose
+                // Persistent Arrow Placement - Anchor bleibt nach erfolgreichem Platzieren bestehen
+                try {
+                    val stepKey = "step_${currentStep}_${instruction.hashCode()}"
+                    val isNewStep = controller.getCurrentStepKey() != stepKey
+                    
+                    if (!controller.isAnchored() || isNewStep) {
+                        // Clear old arrow for new step
+                        if (isNewStep) {
+                            controller.clear()
+                            Log.d("ARCoreArrow", "Cleared arrow for step transition to: $stepKey")
+                        }
+                        
+                        // Neuer Step oder noch kein Pfeil → erstelle camera-relative Anchor
+                        val cameraPose = frame.camera.pose
 
-                    // Berechne Forward-Vektor (ARROW_DISTANCE_M vor Kamera)
-                    val forward = floatArrayOf(0f, 0f, -ARROW_DISTANCE_M)
-                    val rotated = FloatArray(3)
-                    cameraPose.rotateVector(forward, 0, rotated, 0)
+                        // Berechne Forward-Vektor (ARROW_DISTANCE_M vor Kamera)
+                        val forward = floatArrayOf(0f, 0f, -ARROW_DISTANCE_M)
+                        val rotated = FloatArray(3)
+                        cameraPose.rotateVector(forward, 0, rotated, 0)
 
-                    // Zielposition: Kamera + Forward, abgesenkt auf Bodenhöhe
-                    val targetX = cameraPose.tx() + rotated[0]
-                    val targetY = cameraPose.ty() + ARROW_HEIGHT_OFFSET_M
-                    val targetZ = cameraPose.tz() + rotated[2]
+                        // Zielposition: Kamera + Forward, abgesenkt auf Bodenhöhe
+                        val targetX = cameraPose.tx() + rotated[0]
+                        val targetY = cameraPose.ty() + ARROW_HEIGHT_OFFSET_M
+                        val targetZ = cameraPose.tz() + rotated[2]
 
-                    // Erstelle Anchor an berechneter Position
-                    val targetPose = Pose(
-                        floatArrayOf(targetX, targetY, targetZ),
-                        floatArrayOf(0f, 0f, 0f, 1f)  // Keine Rotation
-                    )
-                    val anchor = arSceneView.session?.createAnchor(targetPose)
+                        // Erstelle Anchor an berechneter Position
+                        val targetPose = Pose(
+                            floatArrayOf(targetX, targetY, targetZ),
+                            floatArrayOf(0f, 0f, 0f, 1f)  // Keine Rotation
+                        )
+                        val anchor = arSceneView.session?.createAnchor(targetPose)
 
-                    if (anchor != null) {
-                        controller.placeAnchor(arSceneView.scene, anchor, latchedYaw)
-                        Log.d("ARCoreArrow", "Anchor placed at camera-relative position: (${"%.2f".format(targetX)}, ${"%.2f".format(targetY)}, ${"%.2f".format(targetZ)}), yaw=${"%.1f".format(latchedYaw)}")
+                        if (anchor != null) {
+                            controller.placeAnchor(arSceneView.scene, anchor, targetYaw)
+                            controller.setCurrentStepKey(stepKey) // Markiere aktuellen Step
+                            Log.d("ARCoreArrow", "Anchor placed for $stepKey at (${"%.2f".format(targetX)}, ${"%.2f".format(targetY)}, ${"%.2f".format(targetZ)}), yaw=${"%.1f".format(targetYaw)}°")
+                        } else {
+                            Log.e("ARCoreArrow", "Failed to create anchor for $stepKey")
+                        }
                     } else {
-                        Log.e("ARCoreArrow", "Failed to create camera-relative anchor")
+                        // Pfeil existiert bereits für diesen Step → nur Richtung bei Bedarf updaten
+                        Log.v("ARCoreArrow", "Arrow persistent for $stepKey, yaw=${"%.1f".format(targetYaw)}°")
                     }
-                } else {
-                    // Pfeil existiert bereits → nur Richtung updaten
-                    controller.updateYaw(latchedYaw)
+                } catch (e: Exception) {
+                    Log.e("ARCoreArrow", "Arrow placement error: ${e.message}", e)
                 }
             }
 
@@ -256,6 +277,7 @@ fun ARCoreArrowView(
                     }
                     session.configure(config)
                     arSceneView.setupSession(session)
+                    routeViewModel.setSession(session)
                     Log.d("ARCoreArrow", "Session configured; resuming ArSceneView")
                     try { arSceneView.resume() } catch (e: Exception) { Log.e("ARCoreArrow", "resume fail: ${e.message}") }
                     sessionConfigured = true
@@ -461,7 +483,7 @@ private fun createArrowNode(context: Context): Node {
 private var lastAcquireTimeMs = 0L
 private var acquireInProgress = false
 
-private fun tryAcquireCameraImage(frame: Frame, vm: RouteViewModel) {
+private fun tryAcquireCameraImage(frame: Frame, vm: RouteViewModel, context: Context) {
     val now = System.currentTimeMillis()
     if (acquireInProgress || now - lastAcquireTimeMs < 500L) return
     try {
@@ -479,7 +501,14 @@ private fun tryAcquireCameraImage(frame: Frame, vm: RouteViewModel) {
                         // Use existing processFrame method with conversion from Mat to Bitmap
                         val bitmap = matToBitmap(safeClone)
                         if (bitmap != null) {
-                            vm.processFrame(bitmap)
+                            // Run processFrame in coroutine with scene context
+                            GlobalScope.launch {
+                                try {
+                                    vm.processFrame(bitmap, context)
+                                } catch (e: Exception) {
+                                    Log.w("ARCoreArrow", "processFrame failed: ${e.message}")
+                                }
+                            }
                         }
                     }
                 } finally {
@@ -490,7 +519,13 @@ private fun tryAcquireCameraImage(frame: Frame, vm: RouteViewModel) {
                 val bitmap = imageToBitmap(image)
                 if (bitmap != null) {
                     try {
-                        vm.processFrame(bitmap)
+                        GlobalScope.launch {
+                            try {
+                                vm.processFrame(bitmap, context)
+                            } catch (e: Exception) {
+                                Log.w("ARCoreArrow", "processFrame fallback failed: ${e.message}")
+                            }
+                        }
                     } catch (_: Exception) {
                     }
                 }
@@ -650,18 +685,61 @@ private fun performInstantPlacementHitTest(frame: Frame, centerX: Float, centerY
     }
 }
 
-private fun instructionToYaw(instruction: String): Float {
-    if (instruction.isBlank()) return 0f
-    val s = instruction.lowercase()
-    return when {
-        // Left
-        s.contains("links") || s.contains("left") -> 270f
-        // Right
-        s.contains("rechts") || s.contains("right") -> 90f
-        // U-turn / back
-        s.contains("zurück") || s.contains("umdrehen") || s.contains("u-turn") || s.contains("uturn") || s.contains("back") -> 180f
-        // Straight / ahead
-        s.contains("gerade") || s.contains("geradeaus") || s.contains("straight") || s.contains("ahead") -> 0f
+private fun extractYawFromPose(pose: Pose): Float {
+    // Extract rotation from pose quaternion and convert to yaw angle
+    val qx = pose.qx()
+    val qy = pose.qy()
+    val qz = pose.qz()
+    val qw = pose.qw()
+    
+    // Convert quaternion to yaw (rotation around Y axis)
+    val yaw = kotlin.math.atan2(2.0 * (qw * qy + qx * qz), 1.0 - 2.0 * (qy * qy + qz * qz))
+    return Math.toDegrees(yaw).toFloat()
+}
+
+/**
+ * Berechnet die Pfeil-Richtung basierend auf der Instruction
+ * Basierend auf der JSON-Route-Struktur und Ihrem Plan
+ */
+private fun calculateArrowDirection(instruction: String): Float {
+    val cleanInstruction = instruction.replace(Regex("</?b>"), "").lowercase()
+    
+    // Calculate base direction
+    val baseYaw = when {
+        // Richtungsangaben (häufigste Fälle zuerst)
+        cleanInstruction.contains("links ab") || cleanInstruction.contains("turn left") -> -90f
+        cleanInstruction.contains("rechts ab") || cleanInstruction.contains("turn right") -> 90f
+        cleanInstruction.contains("geradeaus") || cleanInstruction.contains("straight") -> 0f
+        
+        // Detailliertere Richtungen
+        cleanInstruction.contains("scharf links") || cleanInstruction.contains("sharp left") -> -120f
+        cleanInstruction.contains("scharf rechts") || cleanInstruction.contains("sharp right") -> 120f
+        cleanInstruction.contains("leicht links") || cleanInstruction.contains("slight left") -> -45f
+        cleanInstruction.contains("leicht rechts") || cleanInstruction.contains("slight right") -> 45f
+        
+        // U-Turn
+        cleanInstruction.contains("umkehren") || cleanInstruction.contains("u-turn") -> 180f
+        
+        // Durchgang/Tür-basierte Anweisungen - meist geradeaus
+        cleanInstruction.contains("durch") || cleanInstruction.contains("through") ||
+        cleanInstruction.contains("tür") || cleanInstruction.contains("door") ||
+        cleanInstruction.contains("verlassen") || cleanInstruction.contains("leave") -> 0f
+        
+        // Treppe
+        cleanInstruction.contains("treppe") || cleanInstruction.contains("stairs") -> {
+            when {
+                cleanInstruction.contains("hinauf") || cleanInstruction.contains("up") -> 0f
+                cleanInstruction.contains("hinab") || cleanInstruction.contains("down") -> 0f
+                else -> 0f
+            }
+        }
+        
+        // Standard: geradeaus
         else -> 0f
     }
+    
+    // INVERT yaw for ARCore coordinate system (left-handed vs right-handed)
+    // ARCore Y-rotation is inverted compared to intuitive direction
+    return -baseYaw
 }
+

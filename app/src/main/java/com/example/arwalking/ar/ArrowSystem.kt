@@ -228,6 +228,9 @@ class ArrowController(private val context: Context) {
     private var anchor: Anchor? = null
     private var anchorNode: AnchorNode? = null
     private val renderer = ArrowRenderer(context)
+    
+    // Step tracking for persistence
+    private var currentStepKey: String? = null
 
     fun attachTo(scene: Scene) {
         if (renderer.rootNode.parent == null) {
@@ -246,6 +249,7 @@ class ArrowController(private val context: Context) {
         } catch (_: Exception) {}
         anchorNode = null
         anchor = null
+        currentStepKey = null
     }
 
     fun placeAnchor(scene: Scene, newAnchor: Anchor, yawDeg: Float) {
@@ -282,4 +286,7 @@ class ArrowController(private val context: Context) {
         renderer.setLocalPose(currentPos, yawDeg)
         renderer.ensureRenderable()
     }
+    
+    fun setCurrentStepKey(key: String) { currentStepKey = key }
+    fun getCurrentStepKey(): String? = currentStepKey
 }
