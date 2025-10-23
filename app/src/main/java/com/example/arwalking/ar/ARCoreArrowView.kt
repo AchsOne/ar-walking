@@ -326,12 +326,12 @@ val elapsed = nowMs - lastReliableMatchMs
                 }
                 
                 // ========================================
-                // Direction Calculation (straight relative to camera at placement)
+                // Direction Calculation (use arrow state direction)
                 // ========================================
                 
-                // Always no rotation (0°) — arrow model must face forward (-Z)
-                val targetYaw = 0f
-                Log.d("ARCoreArrow", "Arrow visible: step=$currentStep, yaw fixed to 0°")
+                // Use direction from arrow state (calculated by ArrowControllerImpl)
+                val targetYaw = arrowState.directionYaw
+                Log.d("ARCoreArrow", "Arrow visible: step=$currentStep, yaw=${targetYaw}°")
 
                 // Persistent Arrow Placement - Anchor bleibt nach erfolgreichem Platzieren bestehen
                 try {
