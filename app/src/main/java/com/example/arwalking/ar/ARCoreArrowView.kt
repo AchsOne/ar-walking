@@ -38,7 +38,7 @@ import com.google.ar.sceneform.rendering.Color
 import com.google.ar.sceneform.rendering.MaterialFactory
 import com.google.ar.sceneform.rendering.ShapeFactory
 import com.google.ar.sceneform.Node
-import com.example.arwalking.ar.ArrowController
+import com.example.arwalking.ar.rendering.ArrowRenderer3D
 import com.google.ar.core.Pose
 import org.opencv.android.Utils
 import org.opencv.core.CvType
@@ -99,8 +99,8 @@ fun ARCoreArrowView(
             // Do not setup session yet; wait for camera permission
             // Session will be configured in update() when hasCameraPermission = true
 
-            // Persist ArrowController on the view so update() can access the same instance
-            val controller = ArrowController(ctx)
+            // Persist ArrowRenderer3D on the view so update() can access the same instance
+            val controller = ArrowRenderer3D(ctx)
             arSceneView.tag = controller
 
             arSceneView.scene.addOnUpdateListener { _ ->
@@ -110,7 +110,7 @@ fun ARCoreArrowView(
                 try {
                     Log.v("ARCoreArrow", "Scene tick")
                     
-                    val controller = (arSceneView.tag as? ArrowController) ?: ArrowController(arSceneView.context).also { arSceneView.tag = it }
+                    val controller = (arSceneView.tag as? ArrowRenderer3D) ?: ArrowRenderer3D(arSceneView.context).also { arSceneView.tag = it }
                     controller.attachTo(arSceneView.scene)
                     
                     // Diagnostic: camera tracking state, planes, recognition
@@ -151,7 +151,7 @@ fun ARCoreArrowView(
                     }
                 }
 
-                val controller = (arSceneView.tag as? ArrowController) ?: return@addOnUpdateListener
+                val controller = (arSceneView.tag as? ArrowRenderer3D) ?: return@addOnUpdateListener
 
                 // Gate AR drawing until we have a reliable landmark recognition
                 val matchesForGate = try { routeViewModel.currentMatches.value } catch (_: Exception) { emptyList() }

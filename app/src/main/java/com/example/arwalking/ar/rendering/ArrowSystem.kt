@@ -1,4 +1,4 @@
-package com.example.arwalking.ar
+package com.example.arwalking.ar.rendering
 
 import android.content.Context
 import android.util.Log
@@ -15,8 +15,8 @@ import com.google.ar.sceneform.rendering.ShapeFactory
 
 data class ArrowConfig(
     // Geometrie des Chevrons
-    val limbLength: Float = 0.48f,        // Länge je „Arm“
-    val limbRadius: Float = 0.07f,        // Dicke/Radius je „Arm“
+    val limbLength: Float = 0.48f,        // Länge je „Arm"
+    val limbRadius: Float = 0.07f,        // Dicke/Radius je „Arm"
     val chevronAngleDeg: Float = 92f,     // Winkel zwischen den Armen (~90° wie im Bild)
 
     // Layer-Offsets (für Outline/Bevel-Optik)
@@ -61,7 +61,7 @@ class ArrowRenderer(
         geom.children.toList().forEach { it.setParent(null) }
     }
 
-    // --- Hilfsfunktion: „Capsule“ aus Zylinder + 2 Kugel-Kappen ---
+    // --- Hilfsfunktion: „Capsule" aus Zylinder + 2 Kugel-Kappen ---
     private fun makeCapsule(length: Float, radius: Float, material: com.google.ar.sceneform.rendering.Material): Node {
         val parent = Node()
 
@@ -148,7 +148,7 @@ class ArrowRenderer(
     ): Node {
         val group = Node()
 
-        // BACK (weißer Rand / „Sticker“-Look)
+        // BACK (weißer Rand / „Sticker"-Look)
         val back = makeChevronLayer(
             config.limbLength,
             config.limbRadius,
@@ -233,7 +233,7 @@ class ArrowRenderer(
     fun setUnlitIfPossible() { /* procedural -> no-op */ }
 }
 
-class ArrowController(private val context: Context) {
+class ArrowRenderer3D(private val context: Context) {
     private var anchor: Anchor? = null
     private var anchorNode: AnchorNode? = null
     private val arrowRenderer = ArrowRenderer(context)
@@ -336,53 +336,61 @@ class ArrowController(private val context: Context) {
     fun getCurrentStepKey(): String? = currentStepKey
 }
 
-// --- Simple Red Cone for Destination ---
-private fun createRedConeNode(context: Context): Node {
+
+/**
+ * Creates a simple red cone node to serve as a destination marker in the AR scene.
+ *
+ * The cone is opaque, colored red, and points upward (Y+). It is built using either
+ * ShapeFactory.makeCone (if available), or as a fallback by stacking two cylinders
+ * of different radii to approximate a cone shape.
+ *
+ * @param context Android context for material creation.
+ * @return Node containing the red cone geometry.
+ */
+fun createRedConeNode(context: Context): Node {
     val node = Node()
-    
-    // Bright red color for destination cone
-    val redColor = Color(0.9f, 0.1f, 0.1f, 1.0f) // Bright red
-    
-    // Cone dimensions (tip pointing down)
-    val coneHeight = 0.4f
-    val coneBaseRadius = 0.15f
-    
-    MaterialFactory.makeOpaqueWithColor(context, redColor).thenAccept { redMaterial ->
+    val baseRadius = 0.15f
+    val height = 0.4f
+    val color = Color(0.9f, 0.1f, 0.1f, 1.0f)
+    MaterialFactory.makeOpaqueWithColor(context, color).thenAccept { material ->
         try {
-            // Create cone shape using stacked cylinders (approximation)
-            val segments = 8 // Number of segments to approximate cone
-            
-            for (i in 0 until segments) {
-                val progress = i.toFloat() / segments.toFloat()
-                val nextProgress = (i + 1).toFloat() / segments.toFloat()
-                
-                // Calculate radius at each segment (larger at top, smaller at bottom)
-                val topRadius = coneBaseRadius * (1.0f - progress)
-                val bottomRadius = coneBaseRadius * (1.0f - nextProgress)
-                val segmentHeight = coneHeight / segments
-                
-                // Position: start from top (y=0) going down
-                val yPosition = -progress * coneHeight
-                
-                // Use cylinder for each segment
-                val avgRadius = (topRadius + bottomRadius) / 2.0f
-                if (avgRadius > 0.01f) { // Skip very small segments at the tip
-                    val cylinderSize = Vector3(avgRadius * 2, segmentHeight, avgRadius * 2)
-                    val cylinder = ShapeFactory.makeCube(cylinderSize, Vector3(0f, yPosition, 0f), redMaterial)
-                    node.addChild(Node().apply { renderable = cylinder })
-                }
+            // Try to use ShapeFactory.makeCone if available (Sceneform 1.17+)
+            val coneRenderable = try {
+                val method = ShapeFactory::class.java.getMethod(
+                    "makeCone",
+                    Float::class.java,
+                    Float::class.java,
+                    Vector3::class.java,
+                    com.google.ar.sceneform.rendering.Material::class.java
+                )
+                method.invoke(
+                    null,
+                    baseRadius,
+                    height,
+                    Vector3(0f, height / 2f, 0f), // Pivot at base
+                    material
+                ) as com.google.ar.sceneform.rendering.ModelRenderable
+            } catch (e: Exception) {
+                null
             }
-            
-            Log.d("RedCone", "Created red cone destination marker")
+            if (coneRenderable != null) {
+                val coneNode = Node().apply {
+                    renderable = coneRenderable
+                }
+                node.addChild(coneNode)
+            } else {
+                // Fallback: Approximate cone by stacking two cylinders
+                val cyl1 = ShapeFactory.makeCylinder(baseRadius, height * 0.7f, Vector3(0f, height * 0.35f, 0f), material)
+                val cyl2 = ShapeFactory.makeCylinder(baseRadius * 0.3f, height * 0.3f, Vector3(0f, height * 0.85f, 0f), material)
+                val n1 = Node().apply { renderable = cyl1 }
+                val n2 = Node().apply { renderable = cyl2 }
+                node.addChild(n1)
+                node.addChild(n2)
+            }
+            Log.d("ArrowSystem", "Created red cone destination marker")
         } catch (e: Exception) {
-            Log.e("RedCone", "Failed to build red cone: ${e.message}", e)
-            // Fallback: simple red cube
-            val fallbackSize = Vector3(0.2f, 0.3f, 0.2f)
-            val fallback = ShapeFactory.makeCube(fallbackSize, Vector3(0f, -0.15f, 0f), redMaterial)
-            node.addChild(Node().apply { renderable = fallback })
+            Log.e("ArrowSystem", "Failed to create red cone node: ${e.message}", e)
         }
     }
-
     return node
 }
-

@@ -50,12 +50,6 @@ class DistanceTracker {
     }
 
     /**
-     * (Removed) External distance contribution
-     * Kept intentionally unimplemented to avoid pedometer usage.
-     */
-    // fun addExternalDistance(deltaMeters: Float) { /* no-op: pedometer disabled */ }
-    
-    /**
      * Reset distance for new step
      */
     fun resetStepDistance() {

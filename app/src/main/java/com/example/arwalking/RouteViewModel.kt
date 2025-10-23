@@ -204,21 +204,11 @@ class RouteViewModel : ViewModel() {
 
     companion object {
         private const val TAG = "RouteViewModel"
-        private const val DEFAULT_STRIDE_M = 0.65
-        // Disabled step-based speed calculation constants
-        // private const val SPEED_EMA_ALPHA = 0.3f
     }
     // Manager instances
     private val positionTrackingManager = PositionTrackingManager()
     private val landmarkMatchingManager = LandmarkMatchingManager()
     private val smartStepProgressionManager = SmartStepProgressionManager()
-    
-    // Schrittbasierte Geschwindigkeit deaktiviert
-    // private val _pedometerSpeedMps = MutableStateFlow(1.0f)
-    // val pedometerSpeedMps: StateFlow<Float> = _pedometerSpeedMps.asStateFlow()
-    // private var lastStepEventTimeMs: Long? = null
-
-    // Step sensor tracking removed
     
     // Route state
     private val _currentRoute = MutableStateFlow<NavigationRoute?>(null)

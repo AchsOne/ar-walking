@@ -1,6 +1,4 @@
-
-
-package com.example.arwalking.components
+package com.example.arwalking.ar.rendering
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
