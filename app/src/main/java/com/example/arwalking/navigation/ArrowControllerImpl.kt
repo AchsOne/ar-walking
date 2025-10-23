@@ -80,47 +80,34 @@ class ArrowControllerImpl(
         
         // Handle state transitions
         val newState = when {
-            // Case 0: Special naming-based landmark for turning:
-            // - *_L -> show left arrow (270°)
-            // - (Future) *_R -> would show right arrow (90°) if needed
-            hasLandmarkMatch && matchedLandmarkIds.any { it.endsWith("_L", ignoreCase = true) } -> {
-                ArrowController.ArrowState(
-                    visible = true,
-                    directionYaw = 270f, // left
-                    confidence = 0.9f,
-                    style = ArrowController.ArrowStyle.LANDMARK,
-                    distanceToTrigger = 0f
-                )
-            }
-            
-            // Case 1: Landmark-based instruction with active landmark match (non *_L) -> straight
+            // Landmark-based instruction with active landmark match -> show
             nextManeuver.hasLandmark && hasLandmarkMatch -> {
                 ArrowController.ArrowState(
                     visible = true,
-                    directionYaw = 0f,
+                    directionYaw = 0f, // Direction handled exclusively by calculateArrowDirection in AR layer
                     confidence = 0.9f,
                     style = ArrowController.ArrowStyle.LANDMARK,
                     distanceToTrigger = 0f
                 )
             }
             
-            // Case 2: Distance-based instruction in trigger window -> straight
+            // Distance-based instruction in trigger window -> show
             isInTriggerWindow && !nextManeuver.hasLandmark -> {
                 handleDistanceBasedArrowStraight(userYaw, distanceToManeuver, dynamicTriggerDistance, speed)
             }
             
-            // Case 3: Confirmation mode after passing trigger point -> straight
+            // Confirmation mode after passing trigger point -> show
             isConfirmationMode && (now - triggerTime) < CONFIRMATION_TIMEOUT_MS -> {
                 ArrowController.ArrowState(
                     visible = true,
-                    directionYaw = 0f,
+                    directionYaw = 0f, // Direction handled in AR layer
                     confidence = 0.8f,
                     style = ArrowController.ArrowStyle.CONFIRMATION,
                     distanceToTrigger = 0f
                 )
             }
             
-            // Case 4: Hide arrow
+            // Hide arrow
             else -> {
                 ArrowController.ArrowState(
                     visible = false,
@@ -195,22 +182,7 @@ class ArrowControllerImpl(
         }
     }
     
-    private fun handleLandmarkBasedArrow(
-        maneuver: RouteManeuver,
-        userYaw: Float,
-        hasLandmarkMatch: Boolean
-    ): ArrowController.ArrowState {
-        val directionYaw = calculateManeuverDirection(maneuver)
-        val confidence = if (hasLandmarkMatch) 0.9f else 0.6f
-        
-        return ArrowController.ArrowState(
-            visible = true,
-            directionYaw = directionYaw,
-            confidence = confidence,
-            style = ArrowController.ArrowStyle.LANDMARK,
-            distanceToTrigger = 0f
-        )
-    }
+    // Direction is not computed here anymore; AR layer handles orientation via calculateArrowDirection
     
     private fun handleDistanceBasedArrowStraight(
         userYaw: Float,
@@ -255,31 +227,7 @@ class ArrowControllerImpl(
         )
     }
     
-    private fun handleConfirmationArrow(
-        maneuver: RouteManeuver,
-        userYaw: Float
-    ): ArrowController.ArrowState {
-        val directionYaw = calculateManeuverDirection(maneuver)
-        
-        return ArrowController.ArrowState(
-            visible = true,
-            directionYaw = directionYaw,
-            confidence = 0.8f,
-            style = ArrowController.ArrowStyle.CONFIRMATION,
-            distanceToTrigger = 0f
-        )
-    }
-    
-    private fun calculateManeuverDirection(maneuver: RouteManeuver): Float {
-        return when (maneuver.maneuverType) {
-            ManeuverType.LEFT -> 270f
-            ManeuverType.RIGHT -> 90f
-            ManeuverType.U_TURN -> 180f
-            ManeuverType.STRAIGHT -> 0f
-            ManeuverType.DESTINATION -> 0f
-            ManeuverType.LANDMARK_ACTION -> 0f // For "go through door", point straight
-        }
-    }
+    // Confirmation arrow direction is not set here anymore; AR layer handles orientation via calculateArrowDirection
     
     private fun calculateDistanceBasedConfidence(
         distanceToManeuver: Float,

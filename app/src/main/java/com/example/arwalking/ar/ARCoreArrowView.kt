@@ -243,53 +243,52 @@ val elapsed = nowMs - lastReliableMatchMs
                     }
                 }
 
-                // Destination check: only show location pin when destination landmark is detected
-                // AND the destination step is at most 1 step ahead of the current step
-                run {
-                    val lastIndex = currentRoute.steps.lastIndex
-                    val isWithinOneStep = lastIndex <= currentStep + 1
-                    val destLandmarkIds = currentRoute.steps.lastOrNull()?.landmarks?.map { it.id }?.toSet() ?: emptySet()
-                    val matches = try { routeViewModel.currentMatches.value } catch (_: Exception) { emptyList() }
-                    val best = matches.maxByOrNull { it.confidence }
-                    val isDestination = best != null && destLandmarkIds.contains(best.landmark.id) && best.confidence >= MIN_CONFIDENCE_FOR_ARROW
-                    if (isDestination && isWithinOneStep) {
-                        try {
-                            // Ensure anchor exists (like for arrow)
-                            if (!controller.isAnchored()) {
-                                val w = arSceneView.width
-                                val h = arSceneView.height
-                                val cx = w / 2f
-                                val cy = h / 2f
-                                val hit = performCenterHitTest(frame, cx, cy) ?: performNeighborHitTest(frame, cx, cy, w, h)
-                                val (tx, ty, tz) = if (hit != null) {
-                                    val p = hit.hitPose; Triple(p.tx(), p.ty(), p.tz())
-                                } else {
-                                    val cameraPose = frame.camera.pose
-                                    val forward = floatArrayOf(0f, 0f, -ARROW_DISTANCE_M)
-                                    val rotated = FloatArray(3)
-                                    cameraPose.rotateVector(forward, 0, rotated, 0)
-                                    Triple(cameraPose.tx() + rotated[0], cameraPose.ty() + ARROW_HEIGHT_OFFSET_M, cameraPose.tz() + rotated[2])
+                    // Destination check: only show location pin when destination landmark is detected
+                    // AND the destination step is at most 1 step ahead of the current step
+                    run {
+                        val lastIndex = currentRoute.steps.lastIndex
+                        val isWithinOneStep = lastIndex <= currentStep + 1
+                        val destLandmarkIds = currentRoute.steps.lastOrNull()?.landmarks?.map { it.id }?.toSet() ?: emptySet()
+                        val matches = try { routeViewModel.currentMatches.value } catch (_: Exception) { emptyList() }
+                        val best = matches.maxByOrNull { it.confidence }
+                        val isDestination = best != null && destLandmarkIds.contains(best.landmark.id) && best.confidence >= MIN_CONFIDENCE_FOR_ARROW
+                        if (isDestination && isWithinOneStep) {
+                            try {
+                                // Ensure anchor exists (like for arrow)
+                                if (!controller.isAnchored()) {
+                                    val w = arSceneView.width
+                                    val h = arSceneView.height
+                                    val cx = w / 2f
+                                    val cy = h / 2f
+                                    val hit = performCenterHitTest(frame, cx, cy) ?: performNeighborHitTest(frame, cx, cy, w, h)
+                                    val (tx, ty, tz) = if (hit != null) {
+                                        val p = hit.hitPose; Triple(p.tx(), p.ty(), p.tz())
+                                    } else {
+                                        val cameraPose = frame.camera.pose
+                                        val forward = floatArrayOf(0f, 0f, -ARROW_DISTANCE_M)
+                                        val rotated = FloatArray(3)
+                                        cameraPose.rotateVector(forward, 0, rotated, 0)
+                                        Triple(cameraPose.tx() + rotated[0], cameraPose.ty() + ARROW_HEIGHT_OFFSET_M, cameraPose.tz() + rotated[2])
+                                    }
+                                    val targetPose = Pose.makeTranslation(tx, ty, tz)
+                                    arSceneView.session?.createAnchor(targetPose)?.let { anchor ->
+                                        controller.placeAnchor(arSceneView.scene, anchor, 0f)
+                                    }
                                 }
-                                val targetPose = Pose.makeTranslation(tx, ty, tz)
-                                arSceneView.session?.createAnchor(targetPose)?.let { anchor ->
-                                    // Set arrow type for destination (straight)
-                                    controller.setArrowTypeFromDirection(0f)
-                                    controller.placeAnchor(arSceneView.scene, anchor, 0f)
-                                }
+                                // Show red cone (destination marker)
+                                controller.showLocationPin()
+                                return@addOnUpdateListener
+                            } catch (e: Exception) {
+                                Log.e("ARCoreArrow", "Location pin placement error: ${e.message}", e)
                             }
-                            controller.showLocationPin()
-                            return@addOnUpdateListener
-                        } catch (e: Exception) {
-                            Log.e("ARCoreArrow", "Location pin placement error: ${e.message}", e)
                         }
                     }
-                }
                 
                 val step = currentRoute.steps[currentStep]
                 val isDoorStep = step.instruction.contains("tür", ignoreCase = true) || step.instruction.contains("door", ignoreCase = true)
-                // Force orientation strictly straight ahead; keep logic commented out for future use
-                var instructionForYaw = "geradeaus"
-                /*
+                // Determine instruction for yaw based on the matched landmark; fallback to current step
+                var instructionForYaw = step.instruction
+                var selectedStepIndex = currentStep
                 run {
                     val matchesNow = try { routeViewModel.currentMatches.value } catch (_: Exception) { emptyList() }
                     val bestNow = matchesNow.maxByOrNull { it.confidence }
@@ -298,10 +297,10 @@ val elapsed = nowMs - lastReliableMatchMs
                         if (matchedIdx >= 0) {
                             val instrForLmk = currentRoute.steps[matchedIdx].instruction
                             instructionForYaw = instrForLmk
+                            selectedStepIndex = matchedIdx
                         }
                     }
                 }
-                */
                 
                 // Determine if we should show arrow based on step type and conditions
                 // RULE: Arrow only visible when feature mapping is enabled AND conditions are met
@@ -328,25 +327,27 @@ val elapsed = nowMs - lastReliableMatchMs
                 }
                 
                 // ========================================
-                // Direction Calculation (use arrow state direction)
+                // Direction Calculation (based on instruction via calculateArrowDirection)
                 // ========================================
-                
-                // Use direction from arrow state (calculated by ArrowControllerImpl)
-                val targetYaw = arrowState.directionYaw
-                Log.w("ARCoreArrow", "*** ARROW DIRECTION *** step=$currentStep, targetYaw=${targetYaw}°, arrowState.visible=${arrowState.visible}, arrowState.style=${arrowState.style}")
+                val relativeYaw = com.example.arwalking.ar.rendering.ArrowOrientation.calculateYawFromInstruction(instructionForYaw)
+                // val cameraYawDeg = try { com.example.arwalking.ar.rendering.ArrowOrientation.cameraYawFromPose(frame.camera.pose) } catch (_: Exception) { 0f }
+                // cameraYawFromPose has been disabled for debugging arrow direction.
+                val cameraYawDeg = 0f // cameraYawFromPose disabled for debugging arrow direction
+                val targetYaw = com.example.arwalking.ar.rendering.ArrowOrientation.worldYaw(cameraYawDeg, relativeYaw)
+                Log.w("ARCoreArrow", "*** ARROW DIRECTION (calc) *** step=$currentStep, instr='${instructionForYaw}', camYaw=${"%.1f".format(cameraYawDeg)}°, relYaw=${"%.1f".format(relativeYaw)}°, targetYaw=${"%.1f".format(targetYaw)}°")
 
                 // Persistent Arrow Placement - Anchor bleibt nach erfolgreichem Platzieren bestehen
                 try {
                     val stepKey = "step_${currentStep}_${instructionForYaw.hashCode()}"
                     val isNewStep = controller.getCurrentStepKey() != stepKey
-                    
+
                     if (!controller.isAnchored() || (isNewStep && hasReliableLandmark)) {
                         // Only clear and re-anchor on step change with reliable landmark
                         if (isNewStep && hasReliableLandmark && controller.isAnchored()) {
                             controller.clear()
                             Log.d("ARCoreArrow", "Cleared anchor for step transition to: $stepKey (landmark-confirmed)")
                         }
-                        
+
                         // Neuer Step oder noch kein Pfeil → Anker auf Bodenebene setzen (wenn möglich)
                         val cameraPose = frame.camera.pose
                         var targetX: Float
@@ -380,15 +381,18 @@ val elapsed = nowMs - lastReliableMatchMs
                         val anchor = arSceneView.session?.createAnchor(targetPose)
 
 if (anchor != null) {
-                            // Set arrow type based on direction AND landmarks BEFORE placing anchor
-                            Log.w("ARCoreArrow", "*** CALLING setArrowTypeFromDirection with targetYaw=${targetYaw}° ***")
-                            controller.setArrowTypeFromDirection(targetYaw)
-                            
-                            // Also check landmarks for turn indicators
+                            // Decide arrow type ONLY from relevant step landmarks with sufficient confidence
                             val matchesForLandmarks = try { routeViewModel.currentMatches.value } catch (_: Exception) { emptyList() }
-                            val landmarkIds = matchesForLandmarks.map { it.landmark.id }
-                            Log.w("ARCoreArrow", "*** CALLING setArrowTypeFromLandmark with landmarks: ${landmarkIds.joinToString(", ")} ***")
-                            controller.setArrowTypeFromLandmark(landmarkIds)
+                            val relevantIds = try {
+                                val stepForOrientation = currentRoute.steps.getOrNull(selectedStepIndex)
+                                val allowed = stepForOrientation?.landmarks?.map { it.id }?.toSet() ?: emptySet()
+                                matchesForLandmarks
+                                    .filter { it.confidence >= MIN_CONFIDENCE_FOR_ARROW }
+                                    .map { it.landmark.id }
+                                    .filter { allowed.contains(it) }
+                            } catch (_: Exception) { emptyList() }
+                            controller.setArrowTypeFromLandmark(relevantIds)
+                            // Use world yaw (cameraYaw + instructionYaw)
                             controller.placeAnchor(arSceneView.scene, anchor, targetYaw)
                             controller.showArrow()
                             controller.setCurrentStepKey(stepKey) // Markiere aktuellen Step
@@ -563,7 +567,7 @@ private class ArrowState {
 
         // Place relative to anchor origin
         arrowNode!!.localPosition = Vector3(0f, 0f, 0f)
-        arrowNode!!.localRotation = Quaternion.axisAngle(Vector3(0f, 1f, 0f), yawDeg)
+        arrowNode!!.localRotation = com.example.arwalking.ar.rendering.ArrowOrientation.greenRotation(yawDeg)
 
         val pose = newAnchor.pose
         val world = anchorNode!!.worldPosition
@@ -577,7 +581,7 @@ private class ArrowState {
 
     fun updateArrowYaw(yawDeg: Float) {
         arrowNode?.let { node ->
-            node.localRotation = Quaternion.axisAngle(Vector3(0f, 1f, 0f), yawDeg)
+            node.localRotation = com.example.arwalking.ar.rendering.ArrowOrientation.greenRotation(yawDeg)
             val world = node.worldPosition
             Log.d("ArrowPos", "YawUpdate: yaw=${"%.1f".format(yawDeg)} at world=(${"%.2f".format(world.x)}, ${"%.2f".format(world.y)}, ${"%.2f".format(world.z)})")
         }
@@ -593,7 +597,7 @@ private class ArrowState {
         }
         // Slightly above ground estimate and 2m ahead
         arrowNode!!.localPosition = Vector3(0f, -1.2f, -2.0f)
-        arrowNode!!.localRotation = Quaternion.axisAngle(Vector3(0f, 1f, 0f), yawDeg)
+        arrowNode!!.localRotation = com.example.arwalking.ar.rendering.ArrowOrientation.greenRotation(yawDeg)
         Log.d("ArrowPos", "Fallback: camera-relative at local=(0.00, -1.20, -2.00), yaw=${"%.1f".format(yawDeg)}")
     }
 }
@@ -838,63 +842,5 @@ private fun performInstantPlacementHitTest(frame: Frame, centerX: Float, centerY
     } catch (e: Exception) {
         null
     }
-}
-
-private fun extractYawFromPose(pose: Pose): Float {
-    // Extract rotation from pose quaternion and convert to yaw angle
-    val qx = pose.qx()
-    val qy = pose.qy()
-    val qz = pose.qz()
-    val qw = pose.qw()
-    
-    // Convert quaternion to yaw (rotation around Y axis)
-    val yaw = kotlin.math.atan2(2.0 * (qw * qy + qx * qz), 1.0 - 2.0 * (qy * qy + qz * qz))
-    return Math.toDegrees(yaw).toFloat()
-}
-
-/**
- * Berechnet die Pfeil-Richtung basierend auf der Instruction
- * Basierend auf der JSON-Route-Struktur und Ihrem Plan
- */
-private fun calculateArrowDirection(instruction: String): Float {
-    val cleanInstruction = instruction.replace(Regex("</?b>"), "").lowercase()
-    
-    // Calculate base direction
-    val baseYaw = when {
-        // Richtungsangaben (häufigste Fälle zuerst)
-        cleanInstruction.contains("links ab") || cleanInstruction.contains("turn left") -> -90f
-        cleanInstruction.contains("rechts ab") || cleanInstruction.contains("turn right") -> 90f
-        cleanInstruction.contains("geradeaus") || cleanInstruction.contains("straight") -> 0f
-        
-        // Detailliertere Richtungen
-        cleanInstruction.contains("scharf links") || cleanInstruction.contains("sharp left") -> -120f
-        cleanInstruction.contains("scharf rechts") || cleanInstruction.contains("sharp right") -> 120f
-        cleanInstruction.contains("leicht links") || cleanInstruction.contains("slight left") -> -45f
-        cleanInstruction.contains("leicht rechts") || cleanInstruction.contains("slight right") -> 45f
-        
-        // U-Turn
-        cleanInstruction.contains("umkehren") || cleanInstruction.contains("u-turn") -> 180f
-        
-        // Durchgang/Tür-basierte Anweisungen - meist geradeaus
-        cleanInstruction.contains("durch") || cleanInstruction.contains("through") ||
-        cleanInstruction.contains("tür") || cleanInstruction.contains("door") ||
-        cleanInstruction.contains("verlassen") || cleanInstruction.contains("leave") -> 0f
-        
-        // Treppe
-        cleanInstruction.contains("treppe") || cleanInstruction.contains("stairs") -> {
-            when {
-                cleanInstruction.contains("hinauf") || cleanInstruction.contains("up") -> 0f
-                cleanInstruction.contains("hinab") || cleanInstruction.contains("down") -> 0f
-                else -> 0f
-            }
-        }
-        
-        // Standard: geradeaus
-        else -> 0f
-    }
-    
-    // INVERT yaw for ARCore coordinate system (left-handed vs right-handed)
-    // ARCore Y-rotation is inverted compared to intuitive direction
-    return -baseYaw
 }
 

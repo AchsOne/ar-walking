@@ -76,7 +76,7 @@ class ArrowRenderer(
     val rootNode: Node = Node()
     // Geometry container rotated so that chevrons point forward (-Z) while root stays identity
     private val geom: Node = Node().apply {
-        localRotation = Quaternion.axisAngle(Vector3(0f, 1f, 0f), 180f)
+        localRotation = Quaternion.identity()
     }
     init {
         rootNode.addChild(geom)
@@ -252,15 +252,9 @@ class ArrowRenderer(
     fun setParent(parent: NodeParent?) { rootNode.setParent(parent) }
     fun setWorldPose(position: Vector3, yawDeg: Float) {
         rootNode.worldPosition = position
-        // Force no rotation
-        rootNode.worldRotation = Quaternion.identity()
+        rootNode.worldRotation = ArrowOrientation.greenRotation(yawDeg)
     }
-    fun setLocalPose(position: Vector3, yawDeg: Float) {
-        rootNode.localPosition = position
-        // Force no rotation
-        rootNode.localRotation = Quaternion.identity()
-    }
-    fun setUnlitIfPossible() { /* procedural -> no-op */ }
+
 }
 
 class ArrowAbbiegen(
@@ -269,7 +263,7 @@ class ArrowAbbiegen(
 ) {
     val rootNode: Node = Node()
     private val geom: Node = Node().apply {
-        localRotation = Quaternion.axisAngle(Vector3(0f, 1f, 0f), 180f)
+        localRotation = Quaternion.identity()
     }
     init {
         rootNode.addChild(geom)
@@ -448,12 +442,9 @@ class ArrowAbbiegen(
     fun setParent(parent: NodeParent?) { rootNode.setParent(parent) }
     fun setWorldPose(position: Vector3, yawDeg: Float) {
         rootNode.worldPosition = position
-        rootNode.worldRotation = Quaternion.identity()
+        rootNode.worldRotation = ArrowOrientation.blueRotation(yawDeg)
     }
-    fun setLocalPose(position: Vector3, yawDeg: Float) {
-        rootNode.localPosition = position
-        rootNode.localRotation = Quaternion.identity()
-    }
+
     fun setUnlitIfPossible() { /* procedural -> no-op */ }
 }
 
@@ -470,53 +461,26 @@ class ArrowRenderer3D(private val context: Context) {
     private var currentStepKey: String? = null
     private var isTurning = false
 
-    fun setArrowTypeFromDirection(directionYaw: Float) {
-        val wasTurning = isTurning
-        Log.d("ArrowRenderer3D", "setArrowTypeFromDirection called with directionYaw=$directionYaw°")
-        
-        // Determine if this is a turn based on direction yaw angle
-        // LEFT = 270°, RIGHT = 90°, U_TURN = 180°, STRAIGHT = 0°
-        val leftTurnCheck = kotlin.math.abs(directionYaw - 270f) < 45f
-        val rightTurnCheck = kotlin.math.abs(directionYaw - 90f) < 45f
-        val uTurnCheck = kotlin.math.abs(directionYaw - 180f) < 45f
-        
-        Log.d("ArrowRenderer3D", "Turn checks: LEFT(${leftTurnCheck}), RIGHT(${rightTurnCheck}), U_TURN(${uTurnCheck})")
-        
-        isTurning = when {
-            leftTurnCheck -> true // LEFT turn (270° ± 45°)
-            rightTurnCheck -> true  // RIGHT turn (90° ± 45°)
-            uTurnCheck -> true // U-TURN (180° ± 45°)
-            else -> false // STRAIGHT (0°) or other
-        }
-        
-        Log.d("ArrowRenderer3D", "Arrow type decision: wasTurning=$wasTurning, isTurning=$isTurning")
-        
-        if (wasTurning != isTurning) {
-            Log.w("ArrowRenderer3D", "*** ARROW TYPE CHANGED *** from ${if (wasTurning) "ArrowAbbiegen" else "ArrowRenderer"} to ${if (isTurning) "ArrowAbbiegen" else "ArrowRenderer"} (directionYaw=$directionYaw°)")
-        } else {
-            Log.d("ArrowRenderer3D", "Arrow type unchanged: ${if (isTurning) "ArrowAbbiegen" else "ArrowRenderer"} (directionYaw=$directionYaw°)")
-        }
-    }
-    
+
     fun setArrowTypeFromLandmark(landmarkIds: List<String>) {
         val wasTurning = isTurning
         Log.d("ArrowRenderer3D", "setArrowTypeFromLandmark called with landmarks: ${landmarkIds.joinToString(", ")}")
-        
+
         // Check if any landmark indicates a turn (ends with _L, _R, etc.)
         val hasTurnLandmark = landmarkIds.any { id ->
-            id.endsWith("_L", ignoreCase = true) || 
+            id.endsWith("_L", ignoreCase = true) ||
             id.endsWith("_R", ignoreCase = true) ||
-            id.contains("turn", ignoreCase = true) ||
             id.contains("biegen", ignoreCase = true)
         }
-        
+
         Log.d("ArrowRenderer3D", "Landmark turn check: hasTurnLandmark=$hasTurnLandmark")
-        
+
+        // Only show blue (turn) arrow when a turn landmark is present; otherwise enforce green arrow
+        isTurning = hasTurnLandmark
         if (hasTurnLandmark) {
-            isTurning = true
             Log.w("ArrowRenderer3D", "*** TURNING SET BY LANDMARK *** landmarks=${landmarkIds.joinToString(", ")}")
         }
-        
+
         if (wasTurning != isTurning) {
             Log.w("ArrowRenderer3D", "*** ARROW TYPE CHANGED BY LANDMARK *** from ${if (wasTurning) "ArrowAbbiegen" else "ArrowRenderer"} to ${if (isTurning) "ArrowAbbiegen" else "ArrowRenderer"}")
         }
@@ -532,7 +496,7 @@ class ArrowRenderer3D(private val context: Context) {
 
     fun hideArrow() {
         // Detach arrow visuals but keep anchor (for sticky/timeout behavior)
-        try { 
+        try {
             arrowRenderer.setParent(null)
             arrowAbbiegen.setParent(null)
         } catch (_: Exception) {}
@@ -575,17 +539,8 @@ class ArrowRenderer3D(private val context: Context) {
             if (anchorNode!!.parent != scene) anchorNode!!.setParent(scene)
         }
 
-        // First set the arrow type from the direction (should be called before placeAnchor)
-        // But as fallback, also try to detect from yawDeg parameter
-        if (kotlin.math.abs(yawDeg) > 45f && kotlin.math.abs(yawDeg) < 315f) {
-            val wasRealTurning = isTurning
-            isTurning = true
-            if (!wasRealTurning) {
-                Log.d("ArrowRenderer3D", "Arrow type set to ArrowAbbiegen from yawDeg=$yawDeg° (fallback)")
-            }
-        }
-        
-        // Switch arrow type if turning state changed
+        // Arrow type must NOT depend on yaw; only landmarks determine blue vs green.
+        // Switch arrow type if turning state changed by landmark
         val shouldDetachOld = anchorNode != null && (arrowRenderer.rootNode.parent == anchorNode || arrowAbbiegen.rootNode.parent == anchorNode)
         if (shouldDetachOld) {
             // Detach old arrow before attaching new one
@@ -596,38 +551,25 @@ class ArrowRenderer3D(private val context: Context) {
         }
 
         // Attach appropriate arrow type
-        if (isTurning) {
+            if (isTurning) {
             if (arrowAbbiegen.rootNode.parent != anchorNode) {
                 arrowAbbiegen.setParent(anchorNode)
             }
-            // SPECIAL HANDLING FOR BLUE ARROW: Position 2m in front of camera and rotate 90° upright
+            // SPECIAL HANDLING FOR BLUE ARROW: centralized position and rotation
             anchorNode?.let { an ->
-                // Get camera pose for positioning 2m ahead
                 val scene = an.scene
                 val camera = scene?.camera
                 if (camera != null) {
-                    val cameraPose = camera.worldPosition
-                    val cameraForward = camera.forward
-                    
-                    // Position 2m in front of camera
-                    val arrowPosition = Vector3(
-                        cameraPose.x + cameraForward.x * 2.0f,  // 2m vor Kamera
-                        cameraPose.y - 0.5f,                     // etwas unter Kamera-Höhe
-                        cameraPose.z + cameraForward.z * 2.0f   // 2m vor Kamera (Z)
-                    )
-                    
-                    // Set position and rotate 90° around X-axis to make it upright
+                    val arrowPosition = ArrowOrientation.bluePosition(camera)
                     arrowAbbiegen.rootNode.worldPosition = arrowPosition
-                    arrowAbbiegen.rootNode.worldRotation = Quaternion.axisAngle(Vector3(1f, 0f, 0f), 90f)
-                    
-                    Log.d("ArrowPos", "*** BLUE ARROW SPECIAL *** position=(${"%.2f".format(arrowPosition.x)}, ${"%.2f".format(arrowPosition.y)}, ${"%.2f".format(arrowPosition.z)}), rotation=90° upright")
+                    arrowAbbiegen.rootNode.worldRotation = ArrowOrientation.blueRotation(yawDeg)
+                    Log.d("ArrowPos", "*** BLUE ARROW SPECIAL *** position=(${"%.2f".format(arrowPosition.x)}, ${"%.2f".format(arrowPosition.y)}, ${"%.2f".format(arrowPosition.z)}), yaw=${"%.1f".format(yawDeg)}°")
                 } else {
                     // Fallback wenn keine Kamera verfügbar
                     val wp = an.worldPosition
                     val worldPos = Vector3(wp.x, wp.y + 0.12f, wp.z)
                     arrowAbbiegen.setWorldPose(worldPos, yawDeg)
-                    arrowAbbiegen.rootNode.worldRotation = Quaternion.axisAngle(Vector3(1f, 0f, 0f), 90f)
-                    Log.d("ArrowPos", "*** BLUE ARROW FALLBACK *** rotated 90° upright")
+                    Log.d("ArrowPos", "*** BLUE ARROW FALLBACK *** yaw=${"%.1f".format(yawDeg)}°")
                 }
             }
             arrowAbbiegen.ensureRenderable()
@@ -646,17 +588,6 @@ class ArrowRenderer3D(private val context: Context) {
         }
     }
 
-    fun updateYaw(yawDeg: Float) {
-        // Keep arrow pointing straight ahead regardless of anchor/camera rotation
-        if (isTurning) {
-            // SPECIAL: Keep blue arrow upright (90° rotation) instead of identity
-            try { arrowAbbiegen.rootNode.worldRotation = Quaternion.axisAngle(Vector3(1f, 0f, 0f), 90f) } catch (_: Exception) {}
-            arrowAbbiegen.ensureRenderable()
-        } else {
-            try { arrowRenderer.rootNode.worldRotation = Quaternion.identity() } catch (_: Exception) {}
-            arrowRenderer.ensureRenderable()
-        }
-    }
 
     fun showArrow() {
         // Ensure arrow visible, hide pin
@@ -668,8 +599,7 @@ class ArrowRenderer3D(private val context: Context) {
                 arrowAbbiegen.setParent(null)
                 arrowAbbiegen.setParent(anchorNode)
             }
-            // SPECIAL: Keep blue arrow upright (90° rotation)
-            arrowAbbiegen.rootNode.worldRotation = Quaternion.axisAngle(Vector3(1f, 0f, 0f), 90f)
+            // Do not override rotation here; keep orientation from placement
             arrowAbbiegen.ensureRenderable()
         } else {
             if (anchorNode != null && arrowRenderer.rootNode.parent != anchorNode) {
