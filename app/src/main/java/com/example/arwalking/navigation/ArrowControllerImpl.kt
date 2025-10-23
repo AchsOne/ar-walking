@@ -42,12 +42,26 @@ class ArrowControllerImpl(
         val nextManeuver = findNextManeuver(match)
         
         if (nextManeuver == null) {
-            // No more maneuvers - hide arrow or show destination
-            currentState = ArrowController.ArrowState(
-                visible = false,
-                directionYaw = 0f,
-                confidence = 0f
-            )
+            // No more maneuvers - check if we should show destination marker
+            val hasDestinationLandmark = hasLandmarkMatch && matchedLandmarkIds.isNotEmpty()
+            if (hasDestinationLandmark) {
+                // Show destination pin/marker when final landmark is detected
+                currentState = ArrowController.ArrowState(
+                    visible = true,
+                    directionYaw = 0f, // Point straight at destination
+                    confidence = 0.9f,
+                    style = ArrowController.ArrowStyle.DESTINATION,
+                    distanceToTrigger = 0f
+                )
+                Log.d(TAG, "🎯 Destination reached: showing destination marker for ${matchedLandmarkIds.first()}")
+            } else {
+                // Hide arrow when no destination landmark detected
+                currentState = ArrowController.ArrowState(
+                    visible = false,
+                    directionYaw = 0f,
+                    confidence = 0f
+                )
+            }
             return currentState
         }
         

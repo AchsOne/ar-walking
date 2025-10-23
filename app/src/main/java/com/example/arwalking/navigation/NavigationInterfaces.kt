@@ -53,7 +53,8 @@ interface ArrowController {
     enum class ArrowStyle {
         DIRECTION,    // Normal directional arrow
         CONFIRMATION, // Arrow shown after passing trigger point
-        LANDMARK      // Arrow shown when landmark is recognized
+        LANDMARK,     // Arrow shown when landmark is recognized
+        DESTINATION   // Destination pin/marker when route is complete
     }
     
     enum class CueStage { NONE, EARLY, MID, LATE, URGENT }

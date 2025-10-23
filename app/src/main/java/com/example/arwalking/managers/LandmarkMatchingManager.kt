@@ -294,16 +294,36 @@ class LandmarkMatchingManager : ViewModel() {
     }
     
     /**
-     * Load bitmap from assets
+     * Load bitmap from assets with fallback for synthetic landmarks
      */
     private fun loadBitmap(context: Context, landmarkId: String): Bitmap? {
         return try {
+            // Try to load the specific landmark image first
             context.assets.open("landmark_images/$landmarkId.jpg").use { inputStream ->
                 BitmapFactory.decodeStream(inputStream)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Could not load bitmap for $landmarkId: ${e.message}")
-            null
+            Log.w(TAG, "Could not load bitmap for $landmarkId: landmark_images/$landmarkId.jpg")
+            
+            // Fallback for synthetic landmarks (e.g., PT-1-566_L -> PT-1-566)
+            if (landmarkId.endsWith("_L") || landmarkId.endsWith("_R")) {
+                val baseLandmarkId = landmarkId.dropLast(2) // Remove _L or _R suffix
+                Log.d(TAG, "Attempting fallback: $landmarkId -> $baseLandmarkId")
+                
+                try {
+                    context.assets.open("landmark_images/$baseLandmarkId.jpg").use { inputStream ->
+                        val bitmap = BitmapFactory.decodeStream(inputStream)
+                        Log.d(TAG, "✅ Fallback successful: Using $baseLandmarkId.jpg for $landmarkId")
+                        bitmap
+                    }
+                } catch (fallbackException: Exception) {
+                    Log.w(TAG, "❌ Fallback also failed for $baseLandmarkId: ${fallbackException.message}")
+                    null
+                }
+            } else {
+                Log.w(TAG, "Could not load bitmap for landmark $landmarkId")
+                null
+            }
         }
     }
     
