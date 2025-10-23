@@ -380,9 +380,15 @@ val elapsed = nowMs - lastReliableMatchMs
                         val anchor = arSceneView.session?.createAnchor(targetPose)
 
 if (anchor != null) {
-                            // Set arrow type based on direction BEFORE placing anchor
+                            // Set arrow type based on direction AND landmarks BEFORE placing anchor
                             Log.w("ARCoreArrow", "*** CALLING setArrowTypeFromDirection with targetYaw=${targetYaw}° ***")
                             controller.setArrowTypeFromDirection(targetYaw)
+                            
+                            // Also check landmarks for turn indicators
+                            val matchesForLandmarks = try { routeViewModel.currentMatches.value } catch (_: Exception) { emptyList() }
+                            val landmarkIds = matchesForLandmarks.map { it.landmark.id }
+                            Log.w("ARCoreArrow", "*** CALLING setArrowTypeFromLandmark with landmarks: ${landmarkIds.joinToString(", ")} ***")
+                            controller.setArrowTypeFromLandmark(landmarkIds)
                             controller.placeAnchor(arSceneView.scene, anchor, targetYaw)
                             controller.showArrow()
                             controller.setCurrentStepKey(stepKey) // Markiere aktuellen Step

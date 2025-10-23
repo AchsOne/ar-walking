@@ -497,6 +497,30 @@ class ArrowRenderer3D(private val context: Context) {
             Log.d("ArrowRenderer3D", "Arrow type unchanged: ${if (isTurning) "ArrowAbbiegen" else "ArrowRenderer"} (directionYaw=$directionYaw°)")
         }
     }
+    
+    fun setArrowTypeFromLandmark(landmarkIds: List<String>) {
+        val wasTurning = isTurning
+        Log.d("ArrowRenderer3D", "setArrowTypeFromLandmark called with landmarks: ${landmarkIds.joinToString(", ")}")
+        
+        // Check if any landmark indicates a turn (ends with _L, _R, etc.)
+        val hasTurnLandmark = landmarkIds.any { id ->
+            id.endsWith("_L", ignoreCase = true) || 
+            id.endsWith("_R", ignoreCase = true) ||
+            id.contains("turn", ignoreCase = true) ||
+            id.contains("biegen", ignoreCase = true)
+        }
+        
+        Log.d("ArrowRenderer3D", "Landmark turn check: hasTurnLandmark=$hasTurnLandmark")
+        
+        if (hasTurnLandmark) {
+            isTurning = true
+            Log.w("ArrowRenderer3D", "*** TURNING SET BY LANDMARK *** landmarks=${landmarkIds.joinToString(", ")}")
+        }
+        
+        if (wasTurning != isTurning) {
+            Log.w("ArrowRenderer3D", "*** ARROW TYPE CHANGED BY LANDMARK *** from ${if (wasTurning) "ArrowAbbiegen" else "ArrowRenderer"} to ${if (isTurning) "ArrowAbbiegen" else "ArrowRenderer"}")
+        }
+    }
 
     fun attachTo(scene: Scene) {
         // Do NOT attach renderer to scene until we have an anchor; just ensure materials are ready
