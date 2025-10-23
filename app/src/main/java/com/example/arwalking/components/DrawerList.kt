@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -65,9 +66,7 @@ fun NavigationDrawer(
     destinationLabel: String,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
-    availableZoomRatios: List<Float> = listOf(0.7f, 1.0f, 2.0f),
-    currentZoomRatio: Float = 1.0f,
-    onZoomChange: (Float) -> Unit = {}
+    onNextStep: () -> Unit
 ) {
     var isMaximized by remember { mutableStateOf(false) }
     var offsetY by remember { mutableStateOf(0f) }
@@ -181,65 +180,42 @@ fun NavigationDrawer(
             )
         }
 
-        // Zoom Level Switcher (Snapchat-style) with round elements - centered
-        val currentZoomIndex = availableZoomRatios.indexOfFirst { it == currentZoomRatio }.takeIf { it >= 0 } ?: 1
-        val zoomLabels = availableZoomRatios.map { ratio ->
-            when {
-                ratio < 1.0f -> {
-                    val formatted = if (ratio == 0.5f) "0.5x" else String.format("%.1fx", ratio)
-                    formatted
-                }
-                ratio == 1.0f -> "1x"
-                else -> "${ratio.toInt()}x" // e.g., "2x"
-            }
-        }
-        
+        // Button "Nächster Schritt" an Stelle der ehemaligen Zoom-Steuerung
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .offset(y = 25.dp)
-                .clip(RoundedCornerShape(20.dp))
+                .clip(RoundedCornerShape(24.dp))
                 .background(Color.Black.copy(alpha = 0.6f))
                 .border(
                     width = 1.dp,
                     color = Color.White.copy(alpha = 0.2f),
-                    shape = RoundedCornerShape(20.dp)
+                    shape = RoundedCornerShape(24.dp)
                 )
-                .padding(horizontal = 6.dp, vertical = 4.dp)
+                .heightIn(min = 48.dp)
+                .clickable { onNextStep() }
+                .padding(horizontal = 16.dp, vertical = 10.dp)
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                availableZoomRatios.forEachIndexed { index, zoomRatio ->
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp) // Make elements perfectly round
-                            .clip(CircleShape) // Round zoom switcher elements  
-                            .background(
-                                if (currentZoomIndex == index) 
-                                    Color.White.copy(alpha = 0.9f) 
-                                else 
-                                    Color.Transparent
-                            )
-                            .clickable { 
-                                onZoomChange(zoomRatio)
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = zoomLabels[index],
-                            color = if (currentZoomIndex == index) 
-                                Color.Black 
-                            else 
-                                Color.White.copy(alpha = 0.8f),
-                            style = TextStyle(
-                                fontSize = 11.sp,
-                                fontWeight = if (currentZoomIndex == index) 
-                                    FontWeight.SemiBold 
-                                else 
-                                    FontWeight.Normal
-                            )
-                        )
-                    }
-                }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "Nächster Schritt",
+                    color = Color.White,
+                    style = TextStyle(
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                )
+                Icon(
+                    painter = painterResource(id = R.drawable.chevron_left_1),
+                    contentDescription = "Nächster Schritt",
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(16.dp)
+                        .graphicsLayer { scaleX = -1f } // Spiegeln, damit der Chevron nach rechts zeigt
+                )
             }
         }
 

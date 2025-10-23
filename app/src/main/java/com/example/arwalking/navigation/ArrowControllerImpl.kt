@@ -17,18 +17,22 @@ class ArrowControllerImpl(
         private const val MIN_TRIGGER_DISTANCE = 8f // Minimum trigger distance
         private const val MAX_TRIGGER_DISTANCE = 25f // Maximum trigger distance
         private const val ANGLE_THRESHOLD = 120f // Angle threshold for showing arrow (increased for testing)
+        private const val HYSTERESIS_METERS = 2f
+        private const val DEFAULT_STRIDE_M = 0.75f
     }
     
     private var currentState = ArrowController.ArrowState()
     private var confirmedManeuvers = mutableSetOf<Int>() // Maneuvers that have been confirmed
     private var triggerTime = 0L
     private var lastManeuverIndex = -1
+    private var lastVisible = false
     
     override fun update(
         match: MapMatcher.Match,
         userYaw: Float,
         currentInstruction: String,
         hasLandmarkMatch: Boolean,
+        matchedLandmarkIds: List<String>,
         speed: Float
     ): ArrowController.ArrowState {
         val now = System.currentTimeMillis()
@@ -47,33 +51,59 @@ class ArrowControllerImpl(
             return currentState
         }
         
-        // Calculate dynamic trigger distance based on speed
-        val dynamicTriggerDistance = calculateDynamicTriggerDistance(speed, nextManeuver.triggerDistance)
+        // Calculate dynamic trigger distance based on speed and base trigger per maneuver type
+        val baseTrigger = baseTriggerForType(nextManeuver)
+        val dynamicTriggerDistance = calculateDynamicTriggerDistance(speed, baseTrigger)
         
         val distanceToManeuver = match.distanceToNextManeuver
-        val isInTriggerWindow = distanceToManeuver <= dynamicTriggerDistance
+        val isInTriggerWindow = inTriggerWithHysteresis(distanceToManeuver, dynamicTriggerDistance)
         val isConfirmationMode = confirmedManeuvers.contains(getManeuverIndex(nextManeuver))
         
         val distanceStr = String.format("%.1f", distanceToManeuver)
         val triggerStr = String.format("%.1f", dynamicTriggerDistance)
         Log.d(TAG, "Update: maneuver=${nextManeuver.maneuverType}, distance=${distanceStr}m, " +
-                "trigger=${triggerStr}m, inWindow=$isInTriggerWindow, confirmed=$isConfirmationMode")
+                "trigger=${triggerStr}m, inWindow=$isInTriggerWindow, confirmed=$isConfirmationMode, speed=${String.format("%.2f", speed)}m/s")
         
         // Handle state transitions
         val newState = when {
-            // Case 1: Landmark-based instruction with active landmark match
+            // Case 0: Special naming-based landmark for turning:
+            // - *_L -> show left arrow (270°)
+            // - (Future) *_R -> would show right arrow (90°) if needed
+            hasLandmarkMatch && matchedLandmarkIds.any { it.endsWith("_L", ignoreCase = true) } -> {
+                ArrowController.ArrowState(
+                    visible = true,
+                    directionYaw = 270f, // left
+                    confidence = 0.9f,
+                    style = ArrowController.ArrowStyle.LANDMARK,
+                    distanceToTrigger = 0f
+                )
+            }
+            
+            // Case 1: Landmark-based instruction with active landmark match (non *_L) -> straight
             nextManeuver.hasLandmark && hasLandmarkMatch -> {
-                handleLandmarkBasedArrow(nextManeuver, userYaw, hasLandmarkMatch)
+                ArrowController.ArrowState(
+                    visible = true,
+                    directionYaw = 0f,
+                    confidence = 0.9f,
+                    style = ArrowController.ArrowStyle.LANDMARK,
+                    distanceToTrigger = 0f
+                )
             }
             
-            // Case 2: Distance-based instruction in trigger window
+            // Case 2: Distance-based instruction in trigger window -> straight
             isInTriggerWindow && !nextManeuver.hasLandmark -> {
-                handleDistanceBasedArrow(nextManeuver, userYaw, distanceToManeuver, dynamicTriggerDistance, speed)
+                handleDistanceBasedArrowStraight(userYaw, distanceToManeuver, dynamicTriggerDistance, speed)
             }
             
-            // Case 3: Confirmation mode after passing trigger point
+            // Case 3: Confirmation mode after passing trigger point -> straight
             isConfirmationMode && (now - triggerTime) < CONFIRMATION_TIMEOUT_MS -> {
-                handleConfirmationArrow(nextManeuver, userYaw)
+                ArrowController.ArrowState(
+                    visible = true,
+                    directionYaw = 0f,
+                    confidence = 0.8f,
+                    style = ArrowController.ArrowStyle.CONFIRMATION,
+                    distanceToTrigger = 0f
+                )
             }
             
             // Case 4: Hide arrow
@@ -127,6 +157,30 @@ class ArrowControllerImpl(
         return dynamicDistance.coerceIn(MIN_TRIGGER_DISTANCE, MAX_TRIGGER_DISTANCE)
     }
     
+    private fun baseTriggerForType(maneuver: RouteManeuver): Float {
+        return when (maneuver.maneuverType) {
+            ManeuverType.LEFT, ManeuverType.RIGHT -> 15f
+            ManeuverType.U_TURN -> 20f
+            ManeuverType.LANDMARK_ACTION -> 10f
+            ManeuverType.DESTINATION -> 5f
+            ManeuverType.STRAIGHT -> 25f
+        }
+    }
+    
+    private fun inTriggerWithHysteresis(distanceToManeuver: Float, triggerDistance: Float): Boolean {
+        val showThreshold = triggerDistance - HYSTERESIS_METERS
+        val hideThreshold = triggerDistance + HYSTERESIS_METERS
+        return if (lastVisible) {
+            val stayVisible = distanceToManeuver <= hideThreshold
+            lastVisible = stayVisible
+            stayVisible
+        } else {
+            val becomeVisible = distanceToManeuver <= showThreshold
+            if (becomeVisible) lastVisible = true
+            becomeVisible
+        }
+    }
+    
     private fun handleLandmarkBasedArrow(
         maneuver: RouteManeuver,
         userYaw: Float,
@@ -144,18 +198,18 @@ class ArrowControllerImpl(
         )
     }
     
-    private fun handleDistanceBasedArrow(
-        maneuver: RouteManeuver,
+    private fun handleDistanceBasedArrowStraight(
         userYaw: Float,
         distanceToManeuver: Float,
         triggerDistance: Float,
         speed: Float
     ): ArrowController.ArrowState {
-        val directionYaw = calculateManeuverDirection(maneuver)
+        val directionYaw = 0f
         val angleDiff = kotlin.math.abs(normalizeAngle(directionYaw - userYaw))
         
         // Only show arrow if user is roughly facing the right direction
-        val shouldShow = angleDiff <= ANGLE_THRESHOLD
+        val facingOk = angleDiff <= ANGLE_THRESHOLD
+        val shouldShow = facingOk // direction check; window handled by caller via hysteresis
         
         if (shouldShow && triggerTime == 0L) {
             triggerTime = System.currentTimeMillis()
@@ -163,12 +217,27 @@ class ArrowControllerImpl(
         
         val confidence = calculateDistanceBasedConfidence(distanceToManeuver, triggerDistance, angleDiff)
         
+        // Step-basierte Hinweise deaktiviert
+        // val stride = if (speed > 0f) max(DEFAULT_STRIDE_M, speed / max(0.3f, speed / DEFAULT_STRIDE_M)) else DEFAULT_STRIDE_M
+        // val remainingSteps = if (stride > 0f) ceil(distanceToManeuver / stride).toInt() else -1
+        // val cue = when {
+        //     remainingSteps in 2..3 -> ArrowController.CueStage.URGENT
+        //     remainingSteps in 4..5 -> ArrowController.CueStage.LATE
+        //     remainingSteps in 6..9 -> ArrowController.CueStage.MID
+        //     remainingSteps in 10..14 -> ArrowController.CueStage.EARLY
+        //     else -> ArrowController.CueStage.NONE
+        // }
+        // val vibrate = remainingSteps in 2..3
+        
         return ArrowController.ArrowState(
             visible = shouldShow,
             directionYaw = directionYaw,
             confidence = confidence,
             style = ArrowController.ArrowStyle.DIRECTION,
             distanceToTrigger = distanceToManeuver
+            // , remainingSteps = remainingSteps,
+            // cueStage = cue,
+            // shouldVibrate = vibrate
         )
     }
     

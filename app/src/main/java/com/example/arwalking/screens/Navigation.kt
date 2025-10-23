@@ -108,8 +108,6 @@ fun CameraScreen(
     }
     var showRationaleDialog by remember { mutableStateOf(false) }
 
-    var currentZoomRatio by remember { mutableStateOf(1.0f) }
-    var availableZoomRatios by remember { mutableStateOf(listOf(0.7f, 1.0f, 2.0f)) }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -141,9 +139,6 @@ fun CameraScreen(
                 mainNavController = mainNavController,
                 destination = actualDestination,
                 startLocation = actualStartLocation,
-                availableZoomRatios = availableZoomRatios,
-                currentZoomRatio = currentZoomRatio,
-                onZoomChange = { currentZoomRatio = it },
                 routeViewModel = routeViewModel
             )
         } else {
@@ -184,9 +179,6 @@ private fun NavigationOverlay(
     mainNavController: NavController,
     destination: String,
     startLocation: String,
-    availableZoomRatios: List<Float>,
-    currentZoomRatio: Float,
-    onZoomChange: (Float) -> Unit,
     routeViewModel: RouteViewModel
 ) {
     val currentRoute by routeViewModel.currentRoute.collectAsState()
@@ -259,16 +251,10 @@ private fun NavigationOverlay(
             navigationSteps = visibleSteps,
             destinationLabel = destination,
             onClose = {},
-            availableZoomRatios = availableZoomRatios,
-            currentZoomRatio = currentZoomRatio,
-            onZoomChange = onZoomChange,
+            onNextStep = { routeViewModel.skipStep() },
             modifier = Modifier.align(Alignment.BottomCenter)
         )
 
-        SkipButton(
-            onClick = { routeViewModel.skipStep() },
-            modifier = Modifier.align(Alignment.Center)
-        )
     }
 }
 
@@ -357,32 +343,6 @@ private fun TopBar(
     }
 }
 
-@Composable
-private fun SkipButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .size(80.dp)
-            .clip(RoundedCornerShape(40.dp))
-            .background(Color.Black.copy(alpha = 0.35f))
-            .border(
-                width = 2.dp,
-                color = Color.White.copy(alpha = 0.6f),
-                shape = RoundedCornerShape(40.dp)
-            )
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            painter = painterResource(id = R.drawable.arrow_up_1),
-            contentDescription = "Skip step",
-            tint = Color.White,
-            modifier = Modifier.size(36.dp)
-        )
-    }
-}
 
 @Composable
 private fun ARInfoIsland(

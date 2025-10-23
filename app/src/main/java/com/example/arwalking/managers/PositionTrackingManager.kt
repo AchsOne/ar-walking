@@ -53,7 +53,10 @@ class PositionTrackingManager {
         frame: Frame,
         currentStep: Int,
         currentRoute: com.example.arwalking.NavigationRoute?,
-        hasLandmarkMatches: Boolean
+        hasLandmarkMatches: Boolean,
+        matchedLandmarkIds: List<String>,
+        measuredSpeedMps: Float = 1.0f,
+        fallbackRemainingDistanceMeters: Float? = null
     ) {
         // Get current pose from ARCore
         val camera = frame.camera
@@ -87,18 +90,28 @@ class PositionTrackingManager {
             _distanceToNext.value = matchResult.distanceToNextManeuver
             Log.v(TAG, "Map matching: progress=${matchResult.s}, distance=${matchResult.distanceToNextManeuver}")
             
+            // Fallback-RemainingDistance deaktiviert – nutze Matcher-Distanz direkt
+            // val isWeakMatch = matchResult.distanceToRoute > 3f
+            // val effectiveDistance = if (isWeakMatch && fallbackRemainingDistanceMeters != null) {
+            //     fallbackRemainingDistanceMeters
+            // } else matchResult.distanceToNextManeuver
+            // val matchForArrow = matchResult.copy(distanceToNextManeuver = effectiveDistance)
+            val matchForArrow = matchResult
+            
             // Update arrow state
             val instruction = if (currentRoute != null && currentStep < currentRoute.steps.size) {
                 currentRoute.steps[currentStep].instruction
             } else ""
             
-            val speed = 1.0f // Default walking speed
+            // Schritt-basierte Geschwindigkeit deaktiviert
+            val speed = 1.0f
             
             val arrowState = arrowController!!.update(
-                matchResult,
+                matchForArrow,
                 yaw,
                 instruction,
                 hasLandmarkMatches,
+                matchedLandmarkIds,
                 speed
             )
             _arrowState.value = arrowState

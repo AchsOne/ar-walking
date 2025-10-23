@@ -44,14 +44,21 @@ class ArrowRenderer(
     private val config: ArrowConfig = ArrowConfig()
 ) {
     val rootNode: Node = Node()
-    init { buildProcedural() }
+    // Geometry container rotated so that chevrons point forward (-Z) while root stays identity
+    private val geom: Node = Node().apply {
+        localRotation = Quaternion.axisAngle(Vector3(0f, 1f, 0f), 180f)
+    }
+    init {
+        rootNode.addChild(geom)
+        buildProcedural()
+    }
 
     fun ensureRenderable() {
-        if (rootNode.children.isEmpty()) buildProcedural()
+        if (geom.children.isEmpty()) buildProcedural()
     }
 
     private fun clearChildren() {
-        rootNode.children.toList().forEach { it.setParent(null) }
+        geom.children.toList().forEach { it.setParent(null) }
     }
 
     // --- Hilfsfunktion: „Capsule“ aus Zylinder + 2 Kugel-Kappen ---
@@ -197,7 +204,7 @@ class ArrowRenderer(
                             )
                             chevron.localPosition = pos
 
-                            rootNode.addChild(chevron)
+                            geom.addChild(chevron)
                         }
 
                         // Gesamt-Scale kleiner
@@ -215,11 +222,13 @@ class ArrowRenderer(
     fun setParent(parent: NodeParent?) { rootNode.setParent(parent) }
     fun setWorldPose(position: Vector3, yawDeg: Float) {
         rootNode.worldPosition = position
-        rootNode.worldRotation = Quaternion.axisAngle(Vector3(0f, 1f, 0f), yawDeg)
+        // Force no rotation
+        rootNode.worldRotation = Quaternion.identity()
     }
     fun setLocalPose(position: Vector3, yawDeg: Float) {
         rootNode.localPosition = position
-        rootNode.localRotation = Quaternion.axisAngle(Vector3(0f, 1f, 0f), yawDeg)
+        // Force no rotation
+        rootNode.localRotation = Quaternion.identity()
     }
     fun setUnlitIfPossible() { /* procedural -> no-op */ }
 }
@@ -227,23 +236,33 @@ class ArrowRenderer(
 class ArrowController(private val context: Context) {
     private var anchor: Anchor? = null
     private var anchorNode: AnchorNode? = null
-    private val renderer = ArrowRenderer(context)
-    
+    private val arrowRenderer = ArrowRenderer(context)
+
+    // Destination pin
+    private var locationPinNode: Node? = null
+
     // Step tracking for persistence
     private var currentStepKey: String? = null
 
     fun attachTo(scene: Scene) {
-        if (renderer.rootNode.parent == null) {
-            renderer.setParent(scene)
-        }
-        renderer.ensureRenderable()
+        // Do NOT attach renderer to scene until we have an anchor; just ensure materials are ready
+        arrowRenderer.ensureRenderable()
     }
 
     fun isAnchored(): Boolean = anchor != null && anchorNode != null
 
+    fun hideArrow() {
+        // Detach arrow visuals but keep anchor (for sticky/timeout behavior)
+        try { arrowRenderer.setParent(null) } catch (_: Exception) {}
+    }
+
     fun clear() {
         try {
-            renderer.setParent(null)
+            // Detach visuals
+            arrowRenderer.setParent(null)
+            locationPinNode?.setParent(null)
+            locationPinNode = null
+            // Detach anchor
             anchorNode?.anchor?.detach()
             anchorNode?.setParent(null)
         } catch (_: Exception) {}
@@ -272,21 +291,177 @@ class ArrowController(private val context: Context) {
             if (anchorNode!!.parent != scene) anchorNode!!.setParent(scene)
         }
 
-        if (renderer.rootNode.parent != anchorNode) {
-            renderer.setParent(anchorNode)
+        if (arrowRenderer.rootNode.parent != anchorNode) {
+            arrowRenderer.setParent(anchorNode)
         }
 
-        // Fixed offset above ground; keep stable
-        renderer.setLocalPose(Vector3(0f, 0.12f, 0f), yawDeg)
-        renderer.ensureRenderable()
+        // Fixed offset above ground in WORLD space; cancel any parent rotation
+        anchorNode?.let { an ->
+            val wp = an.worldPosition
+            val worldPos = Vector3(wp.x, wp.y + 0.12f, wp.z)
+            arrowRenderer.setWorldPose(worldPos, yawDeg)
+            Log.d("ArrowPos", "Renderer worldRotation after place: ${arrowRenderer.rootNode.worldRotation}")
+        }
+        arrowRenderer.ensureRenderable()
     }
 
     fun updateYaw(yawDeg: Float) {
-        val currentPos = renderer.rootNode.localPosition
-        renderer.setLocalPose(currentPos, yawDeg)
-        renderer.ensureRenderable()
+        // Keep arrow pointing straight ahead regardless of anchor/camera rotation
+        try { arrowRenderer.rootNode.worldRotation = Quaternion.identity() } catch (_: Exception) {}
+        arrowRenderer.ensureRenderable()
     }
-    
+
+    fun showArrow() {
+        // Ensure arrow visible, hide pin
+        locationPinNode?.setParent(null)
+        if (anchorNode != null && arrowRenderer.rootNode.parent != anchorNode) {
+            arrowRenderer.setParent(anchorNode)
+        }
+        arrowRenderer.ensureRenderable()
+    }
+
+    fun showLocationPin() {
+        if (anchorNode == null) return
+        // Build pin lazily (detailed version)
+        if (locationPinNode == null) locationPinNode = createLocationPinNode(context)
+        // Hide arrow
+        arrowRenderer.setParent(null)
+        // Attach pin
+        if (locationPinNode!!.parent != anchorNode) locationPinNode!!.setParent(anchorNode)
+        locationPinNode!!.localPosition = Vector3(0f, 0.02f, 0f)
+        locationPinNode!!.localRotation = Quaternion.identity() // no direction
+    }
+
     fun setCurrentStepKey(key: String) { currentStepKey = key }
     fun getCurrentStepKey(): String? = currentStepKey
+}
+
+// --- Location Pin (detailed design) ---
+private fun createLocationPinNode(context: Context): Node {
+    val node = Node()
+
+    // Farben für das Location-Icon (wie im Bild)
+    val colorLight = Color(1.0f, 0.55f, 0.55f) // Helles Lachs-Rosa
+    val colorMedium = Color(0.95f, 0.35f, 0.35f) // Mittleres Rot
+    val colorDark = Color(0.85f, 0.15f, 0.15f) // Dunkles Rot für Schatten
+
+    // Dimensionen
+    val pinHeight = 0.5f
+    val pinWidth = 0.35f
+    val holeRadius = 0.08f
+    val holeYOffset = 0.32f // Position des Lochs (oben)
+
+    MaterialFactory.makeOpaqueWithColor(context, colorLight).thenAccept { lightMat ->
+        MaterialFactory.makeOpaqueWithColor(context, colorMedium).thenAccept { mediumMat ->
+            MaterialFactory.makeOpaqueWithColor(context, colorDark).thenAccept { darkMat ->
+                try {
+                    // Vorderseite (hell)
+                    val topSize = Vector3(pinWidth, 0.25f, 0.08f)
+                    val topFront = ShapeFactory.makeCube(topSize, Vector3(0.04f, holeYOffset, 0.04f), lightMat)
+                    node.addChild(Node().apply { renderable = topFront })
+
+                    val midUpperSize = Vector3(pinWidth * 0.95f, 0.18f, 0.08f)
+                    val midUpper = ShapeFactory.makeCube(midUpperSize, Vector3(0.04f, 0.18f, 0.04f), lightMat)
+                    node.addChild(Node().apply { renderable = midUpper })
+
+                    val midSize = Vector3(pinWidth * 0.85f, 0.15f, 0.08f)
+                    val mid = ShapeFactory.makeCube(midSize, Vector3(0.04f, 0.05f, 0.04f), lightMat)
+                    node.addChild(Node().apply { renderable = mid })
+
+                    val lowerSize = Vector3(pinWidth * 0.65f, 0.12f, 0.08f)
+                    val lower = ShapeFactory.makeCube(lowerSize, Vector3(0.04f, -0.08f, 0.04f), lightMat)
+                    node.addChild(Node().apply { renderable = lower })
+
+                    val taperSize = Vector3(pinWidth * 0.4f, 0.1f, 0.08f)
+                    val taper = ShapeFactory.makeCube(taperSize, Vector3(0.04f, -0.18f, 0.04f), lightMat)
+                    node.addChild(Node().apply { renderable = taper })
+
+                    val tipSize1 = Vector3(pinWidth * 0.25f, 0.08f, 0.08f)
+                    val tip1 = ShapeFactory.makeCube(tipSize1, Vector3(0.04f, -0.27f, 0.04f), lightMat)
+                    node.addChild(Node().apply { renderable = tip1 })
+
+                    val tipSize2 = Vector3(pinWidth * 0.12f, 0.06f, 0.08f)
+                    val tip2 = ShapeFactory.makeCube(tipSize2, Vector3(0.04f, -0.33f, 0.04f), lightMat)
+                    node.addChild(Node().apply { renderable = tip2 })
+
+                    // Rückseite/Seiten (medium/dunkel)
+                    val topSideL = ShapeFactory.makeCube(Vector3(0.08f, 0.25f, pinWidth * 0.7f), Vector3(-pinWidth * 0.35f, holeYOffset, 0f), mediumMat)
+                    node.addChild(Node().apply { renderable = topSideL })
+                    val topSideR = ShapeFactory.makeCube(Vector3(0.08f, 0.25f, pinWidth * 0.7f), Vector3(pinWidth * 0.43f, holeYOffset, 0f), mediumMat)
+                    node.addChild(Node().apply { renderable = topSideR })
+
+                    val backTop = ShapeFactory.makeCube(Vector3(pinWidth * 0.9f, 0.25f, 0.08f), Vector3(0f, holeYOffset, -pinWidth * 0.32f), darkMat)
+                    node.addChild(Node().apply { renderable = backTop })
+                    val backMid = ShapeFactory.makeCube(Vector3(pinWidth * 0.8f, 0.3f, 0.08f), Vector3(0f, 0.1f, -pinWidth * 0.32f), darkMat)
+                    node.addChild(Node().apply { renderable = backMid })
+                    val backLower = ShapeFactory.makeCube(Vector3(pinWidth * 0.55f, 0.2f, 0.08f), Vector3(0f, -0.13f, -pinWidth * 0.32f), darkMat)
+                    node.addChild(Node().apply { renderable = backLower })
+                    val backTip = ShapeFactory.makeCube(Vector3(pinWidth * 0.2f, 0.14f, 0.08f), Vector3(0f, -0.29f, -pinWidth * 0.32f), darkMat)
+                    node.addChild(Node().apply { renderable = backTip })
+
+                    val midSideL = ShapeFactory.makeCube(Vector3(0.08f, 0.35f, pinWidth * 0.65f), Vector3(-pinWidth * 0.33f, 0.08f, 0f), mediumMat)
+                    node.addChild(Node().apply { renderable = midSideL })
+                    val midSideR = ShapeFactory.makeCube(Vector3(0.08f, 0.35f, pinWidth * 0.65f), Vector3(pinWidth * 0.41f, 0.08f, 0f), mediumMat)
+                    node.addChild(Node().apply { renderable = midSideR })
+
+                    val lowerSideL = ShapeFactory.makeCube(Vector3(0.08f, 0.22f, pinWidth * 0.5f), Vector3(-pinWidth * 0.25f, -0.13f, 0f), mediumMat)
+                    node.addChild(Node().apply { renderable = lowerSideL })
+                    val lowerSideR = ShapeFactory.makeCube(Vector3(0.08f, 0.22f, pinWidth * 0.5f), Vector3(pinWidth * 0.33f, -0.13f, 0f), mediumMat)
+                    node.addChild(Node().apply { renderable = lowerSideR })
+
+                    // Ovales Loch (hell/transparent)
+                    val holeColor = Color(0.9f, 0.95f, 1.0f, 0.3f)
+                    MaterialFactory.makeOpaqueWithColor(context, holeColor).thenAccept { holeMat ->
+                        val holeSize = Vector3(holeRadius * 2.2f, 0.26f, holeRadius * 3f)
+                        val hole = ShapeFactory.makeCube(holeSize, Vector3(0.04f, holeYOffset, 0f), holeMat)
+                        node.addChild(Node().apply { renderable = hole })
+                    }
+                } catch (e: Exception) {
+                    Log.e("LocationPin", "Failed to build location pin: ${e.message}", e)
+                }
+            }
+        }
+    }
+
+    return node
+}
+
+// --- Location Pin (simplified for performance) ---
+private fun createSimpleLocationPinNode(context: Context): Node {
+    val node = Node()
+
+    val colorLight = Color(1.0f, 0.6f, 0.6f)
+    val colorDark = Color(0.85f, 0.2f, 0.2f)
+
+    MaterialFactory.makeOpaqueWithColor(context, colorLight).thenAccept { lightMat ->
+        MaterialFactory.makeOpaqueWithColor(context, colorDark).thenAccept { darkMat ->
+            try {
+                // Hauptkörper (Tropfenform vorne - hell)
+                val bodySize = Vector3(0.32f, 0.45f, 0.1f)
+                val body = ShapeFactory.makeCube(bodySize, Vector3(0.05f, 0.05f, 0.05f), lightMat)
+                node.addChild(Node().apply { renderable = body })
+
+                // Rückseite (dunkel für 3D-Effekt)
+                val backSize = Vector3(0.28f, 0.42f, 0.1f)
+                val back = ShapeFactory.makeCube(backSize, Vector3(0f, 0.05f, -0.12f), darkMat)
+                node.addChild(Node().apply { renderable = back })
+
+                // Spitze vorne
+                val tipSize = Vector3(0.12f, 0.15f, 0.1f)
+                val tip = ShapeFactory.makeCube(tipSize, Vector3(0.05f, -0.3f, 0.05f), lightMat)
+                node.addChild(Node().apply { renderable = tip })
+
+                // Loch (hell/transparent)
+                MaterialFactory.makeOpaqueWithColor(context, Color(0.95f, 0.98f, 1.0f, 0.4f)).thenAccept { holeMat ->
+                    val holeSize = Vector3(0.14f, 0.2f, 0.12f)
+                    val hole = ShapeFactory.makeCube(holeSize, Vector3(0.05f, 0.3f, 0.03f), holeMat)
+                    node.addChild(Node().apply { renderable = hole })
+                }
+            } catch (e: Exception) {
+                Log.e("LocationPin", "Failed to build simple pin: ${e.message}", e)
+            }
+        }
+    }
+
+    return node
 }

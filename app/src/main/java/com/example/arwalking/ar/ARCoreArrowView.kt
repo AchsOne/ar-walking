@@ -59,7 +59,7 @@ import kotlinx.coroutines.launch
 private const val MIN_CONFIDENCE_FOR_ARROW = 0.60f // 60%
 private const val MIN_MATCHES_FOR_ARROW = 3 // Mindestanzahl Feature-Matches
 // Camera-relative Platzierung Konfiguration
-private const val ARROW_DISTANCE_M = 1.5f      // Wie weit vor Kamera
+private const val ARROW_DISTANCE_M = 2.5f      // Wie weit vor Kamera
 private const val ARROW_HEIGHT_OFFSET_M = -1.2f // Wie tief unter Kamera
 @Composable
 fun ARCoreArrowView(
@@ -75,6 +75,13 @@ fun ARCoreArrowView(
     val arrowState by routeViewModel.arrowState.collectAsState()
     val isEnabled by routeViewModel.featureMappingEnabled.collectAsState()
     val matches by routeViewModel.currentMatches.collectAsState()
+
+// Sticky windows to keep AR elements after brief landmark loss and clear after longer absence
+    var lastReliableMatchMs by remember { mutableStateOf(0L) }
+    val stickyMs = 3000L        // keep arrow visible for this long after last reliable match
+    val anchorClearMs = 15000L  // clear anchor after this long without any reliable match
+    // Require one solid landmark lock before any AR is shown
+    var hasInitialLock by remember { mutableStateOf(false) }
 
     // Get camera permission state from context
     val hasCameraPermission = remember {
@@ -111,7 +118,7 @@ fun ARCoreArrowView(
                     val planesAllDiag = session.getAllTrackables(Plane::class.java)
                     val trackedCountDiag = planesAllDiag.count { plane -> plane.trackingState == TrackingState.TRACKING }
                     val matchesNow = try { routeViewModel.currentMatches.value } catch (_: Exception) { emptyList() }
-                    val top = matchesNow.firstOrNull()
+                    val top = matchesNow.maxByOrNull { it.confidence }
                     val recognizedNow = top?.let { 
                         it.matchCount >= MIN_MATCHES_FOR_ARROW && it.confidence >= MIN_CONFIDENCE_FOR_ARROW 
                     } == true
@@ -144,12 +151,56 @@ fun ARCoreArrowView(
                     }
                 }
 
-                // 2) New route-based arrow logic
                 val controller = (arSceneView.tag as? ArrowController) ?: return@addOnUpdateListener
-                if (!isEnabled) {
-                    Log.v("ARCoreArrow", "Arrow hidden: feature mapping disabled")
-                    controller.clear()
+
+                // Gate AR drawing until we have a reliable landmark recognition
+                val matchesForGate = try { routeViewModel.currentMatches.value } catch (_: Exception) { emptyList() }
+                val bestGate = matchesForGate.maxByOrNull { it.confidence }
+                val hasReliableLandmark = bestGate != null && bestGate.confidence >= MIN_CONFIDENCE_FOR_ARROW
+
+                val nowMs = System.currentTimeMillis()
+                if (hasReliableLandmark) {
+                    lastReliableMatchMs = nowMs
+                    if (!hasInitialLock) hasInitialLock = true
+                }
+val elapsed = nowMs - lastReliableMatchMs
+                val withinSticky = elapsed <= stickyMs
+                val alreadyAnchored = controller.isAnchored()
+
+                // Before first lock: never draw
+                if (!hasInitialLock) {
+                    Log.v("ARCoreArrow", "AR gated: waiting for first reliable landmark lock")
+                    kotlinx.coroutines.GlobalScope.launch { try { routeViewModel.updatePosition(frame) } catch (_: Exception) {} }
                     return@addOnUpdateListener
+                }
+
+                if (!hasReliableLandmark) {
+                    // Handle sticky visibility and timed clearing when recognition drops
+                    if (alreadyAnchored) {
+                        when {
+                            withinSticky -> {
+                                // keep showing existing arrow; proceed no further this frame
+                                Log.v("ARCoreArrow", "Sticky keep: showing anchored arrow (elapsed=${elapsed}ms)")
+                                return@addOnUpdateListener
+                            }
+                            elapsed <= anchorClearMs -> {
+                                // hide visuals but keep anchor to allow fast recovery
+                                controller.hideArrow()
+                                Log.v("ARCoreArrow", "Sticky hide: hiding arrow visuals (elapsed=${elapsed}ms)")
+                                return@addOnUpdateListener
+                            }
+                            else -> {
+                                // too long without match: clear anchor
+                                controller.clear()
+                                Log.v("ARCoreArrow", "Sticky clear: clearing anchor (elapsed=${elapsed}ms)")
+                                return@addOnUpdateListener
+                            }
+                        }
+                    } else {
+                        Log.v("ARCoreArrow", "AR gated: no reliable landmark and no anchor")
+                        kotlinx.coroutines.GlobalScope.launch { try { routeViewModel.updatePosition(frame) } catch (_: Exception) {} }
+                        return@addOnUpdateListener
+                    }
                 }
                 
                 // Update position for smart step progression (async)
@@ -169,9 +220,86 @@ fun ARCoreArrowView(
                     controller.clear()
                     return@addOnUpdateListener
                 }
+
+                // Enforce: draw arrow only if matched landmark belongs to current or next two steps
+                run {
+                    val stepsWindowIds = mutableSetOf<String>()
+                    for (i in 0..2) {
+                        val s = currentRoute.steps.getOrNull(currentStep + i)
+                        if (s != null) stepsWindowIds.addAll(s.landmarks.map { it.id })
+                    }
+                    val matchesNow = try { routeViewModel.currentMatches.value } catch (_: Exception) { emptyList() }
+                    val best = matchesNow.maxByOrNull { it.confidence }
+                    val allowedMatch = best != null && best.confidence >= MIN_CONFIDENCE_FOR_ARROW && stepsWindowIds.contains(best.landmark.id)
+                    if (!allowedMatch) {
+                        // Do not place/update a new arrow when the match does not correspond to current/next two steps.
+                        // Keep existing visuals if already anchored (sticky), otherwise skip drawing silently.
+                        if (!controller.isAnchored()) {
+                            Log.v("ARCoreArrow", "Arrow suppressed (no anchor): landmark not in current/next two steps")
+                        } else {
+                            Log.v("ARCoreArrow", "Arrow kept (sticky): landmark not in current/next two steps")
+                        }
+                        return@addOnUpdateListener
+                    }
+                }
+
+                // Destination check: only show location pin when destination landmark is detected
+                // AND the destination step is at most 1 step ahead of the current step
+                run {
+                    val lastIndex = currentRoute.steps.lastIndex
+                    val isWithinOneStep = lastIndex <= currentStep + 1
+                    val destLandmarkIds = currentRoute.steps.lastOrNull()?.landmarks?.map { it.id }?.toSet() ?: emptySet()
+                    val matches = try { routeViewModel.currentMatches.value } catch (_: Exception) { emptyList() }
+                    val best = matches.maxByOrNull { it.confidence }
+                    val isDestination = best != null && destLandmarkIds.contains(best.landmark.id) && best.confidence >= MIN_CONFIDENCE_FOR_ARROW
+                    if (isDestination && isWithinOneStep) {
+                        try {
+                            // Ensure anchor exists (like for arrow)
+                            if (!controller.isAnchored()) {
+                                val w = arSceneView.width
+                                val h = arSceneView.height
+                                val cx = w / 2f
+                                val cy = h / 2f
+                                val hit = performCenterHitTest(frame, cx, cy) ?: performNeighborHitTest(frame, cx, cy, w, h)
+                                val (tx, ty, tz) = if (hit != null) {
+                                    val p = hit.hitPose; Triple(p.tx(), p.ty(), p.tz())
+                                } else {
+                                    val cameraPose = frame.camera.pose
+                                    val forward = floatArrayOf(0f, 0f, -ARROW_DISTANCE_M)
+                                    val rotated = FloatArray(3)
+                                    cameraPose.rotateVector(forward, 0, rotated, 0)
+                                    Triple(cameraPose.tx() + rotated[0], cameraPose.ty() + ARROW_HEIGHT_OFFSET_M, cameraPose.tz() + rotated[2])
+                                }
+                                val targetPose = Pose.makeTranslation(tx, ty, tz)
+                                arSceneView.session?.createAnchor(targetPose)?.let { anchor ->
+                                    controller.placeAnchor(arSceneView.scene, anchor, 0f)
+                                }
+                            }
+                            controller.showLocationPin()
+                            return@addOnUpdateListener
+                        } catch (e: Exception) {
+                            Log.e("ARCoreArrow", "Location pin placement error: ${e.message}", e)
+                        }
+                    }
+                }
                 
                 val step = currentRoute.steps[currentStep]
-                val instruction = step.instruction
+                val isDoorStep = step.instruction.contains("tür", ignoreCase = true) || step.instruction.contains("door", ignoreCase = true)
+                // Force orientation strictly straight ahead; keep logic commented out for future use
+                var instructionForYaw = "geradeaus"
+                /*
+                run {
+                    val matchesNow = try { routeViewModel.currentMatches.value } catch (_: Exception) { emptyList() }
+                    val bestNow = matchesNow.maxByOrNull { it.confidence }
+                    if (bestNow != null && bestNow.confidence >= MIN_CONFIDENCE_FOR_ARROW) {
+                        val matchedIdx = currentRoute.steps.indexOfFirst { s -> s.landmarks.any { it.id == bestNow.landmark.id } }
+                        if (matchedIdx >= 0) {
+                            val instrForLmk = currentRoute.steps[matchedIdx].instruction
+                            instructionForYaw = instrForLmk
+                        }
+                    }
+                }
+                */
                 
                 // Determine if we should show arrow based on step type and conditions
                 // RULE: Arrow only visible when feature mapping is enabled AND conditions are met
@@ -187,7 +315,7 @@ fun ARCoreArrowView(
                     // This ensures the user has started the AR session properly
                     else -> {
                         val featureMappingActive = try { routeViewModel.featureMappingEnabled.value } catch (e: Exception) { false }
-                        Log.d("ARCoreArrow", "Direction step $currentStep: '${instruction}' - feature mapping active: $featureMappingActive, show=$featureMappingActive")
+                        Log.d("ARCoreArrow", "Direction step $currentStep: '${step.instruction}' - feature mapping active: $featureMappingActive, show=$featureMappingActive")
                         featureMappingActive
                     }
                 }
@@ -198,58 +326,74 @@ fun ARCoreArrowView(
                 }
                 
                 // ========================================
-                // Direction Calculation Based on Instruction
+                // Direction Calculation (straight relative to camera at placement)
                 // ========================================
                 
-                val targetYaw = calculateArrowDirection(instruction)
-                Log.d("ARCoreArrow", "Arrow visible: step=$currentStep, instruction='$instruction', yaw=${"%.1f".format(targetYaw)}°")
+                // Always no rotation (0°) — arrow model must face forward (-Z)
+                val targetYaw = 0f
+                Log.d("ARCoreArrow", "Arrow visible: step=$currentStep, yaw fixed to 0°")
 
                 // Persistent Arrow Placement - Anchor bleibt nach erfolgreichem Platzieren bestehen
                 try {
-                    val stepKey = "step_${currentStep}_${instruction.hashCode()}"
+                    val stepKey = "step_${currentStep}_${instructionForYaw.hashCode()}"
                     val isNewStep = controller.getCurrentStepKey() != stepKey
                     
-                    if (!controller.isAnchored() || isNewStep) {
-                        // Clear old arrow for new step
-                        if (isNewStep) {
+                    if (!controller.isAnchored() || (isNewStep && hasReliableLandmark)) {
+                        // Only clear and re-anchor on step change with reliable landmark
+                        if (isNewStep && hasReliableLandmark && controller.isAnchored()) {
                             controller.clear()
-                            Log.d("ARCoreArrow", "Cleared arrow for step transition to: $stepKey")
+                            Log.d("ARCoreArrow", "Cleared anchor for step transition to: $stepKey (landmark-confirmed)")
                         }
                         
-                        // Neuer Step oder noch kein Pfeil → erstelle camera-relative Anchor
+                        // Neuer Step oder noch kein Pfeil → Anker auf Bodenebene setzen (wenn möglich)
                         val cameraPose = frame.camera.pose
+                        var targetX: Float
+                        var targetY: Float
+                        var targetZ: Float
+                        val w = arSceneView.width
+                        val h = arSceneView.height
+                        val cx = w / 2f
+                        val cy = h / 2f
+                        val hit = if (isDoorStep) {
+                            // Für Tür-Schritte: strikt mittiger Raycast, damit der Pfeil "gerade auf die Landmarke" zeigt
+                            performCenterHitTest(frame, cx, cy)
+                        } else {
+                            performCenterHitTest(frame, cx, cy) ?: performNeighborHitTest(frame, cx, cy, w, h)
+                        }
+                        if (hit != null) {
+                            val p = hit.hitPose
+                            targetX = p.tx(); targetY = p.ty(); targetZ = p.tz()
+                        } else {
+                            // Fallback: vor Kamera, feste Boden-Absenkung
+                            val forward = floatArrayOf(0f, 0f, -ARROW_DISTANCE_M)
+                            val rotated = FloatArray(3)
+                            cameraPose.rotateVector(forward, 0, rotated, 0)
+                            targetX = cameraPose.tx() + rotated[0]
+                            targetY = cameraPose.ty() + ARROW_HEIGHT_OFFSET_M
+                            targetZ = cameraPose.tz() + rotated[2]
+                        }
 
-                        // Berechne Forward-Vektor (ARROW_DISTANCE_M vor Kamera)
-                        val forward = floatArrayOf(0f, 0f, -ARROW_DISTANCE_M)
-                        val rotated = FloatArray(3)
-                        cameraPose.rotateVector(forward, 0, rotated, 0)
-
-                        // Zielposition: Kamera + Forward, abgesenkt auf Bodenhöhe
-                        val targetX = cameraPose.tx() + rotated[0]
-                        val targetY = cameraPose.ty() + ARROW_HEIGHT_OFFSET_M
-                        val targetZ = cameraPose.tz() + rotated[2]
-
-                        // Erstelle Anchor an berechneter Position
-                        val targetPose = Pose(
-                            floatArrayOf(targetX, targetY, targetZ),
-                            floatArrayOf(0f, 0f, 0f, 1f)  // Keine Rotation
-                        )
+                        // Erstelle Anchor an berechneter Position (Identitätsrotation)
+                        val targetPose = Pose.makeTranslation(targetX, targetY, targetZ)
                         val anchor = arSceneView.session?.createAnchor(targetPose)
 
-                        if (anchor != null) {
+if (anchor != null) {
                             controller.placeAnchor(arSceneView.scene, anchor, targetYaw)
+                            controller.showArrow()
                             controller.setCurrentStepKey(stepKey) // Markiere aktuellen Step
                             Log.d("ARCoreArrow", "Anchor placed for $stepKey at (${"%.2f".format(targetX)}, ${"%.2f".format(targetY)}, ${"%.2f".format(targetZ)}), yaw=${"%.1f".format(targetYaw)}°")
                         } else {
                             Log.e("ARCoreArrow", "Failed to create anchor for $stepKey")
                         }
                     } else {
-                        // Pfeil existiert bereits für diesen Step → nur Richtung bei Bedarf updaten
-                        Log.v("ARCoreArrow", "Arrow persistent for $stepKey, yaw=${"%.1f".format(targetYaw)}°")
+// Do NOT update yaw after placement; keep orientation constant
+                        controller.showArrow() // ensure visible again if previously hidden
+                        Log.v("ARCoreArrow", "Arrow persistent for $stepKey (yaw unchanged)")
                     }
                 } catch (e: Exception) {
                     Log.e("ARCoreArrow", "Arrow placement error: ${e.message}", e)
                 }
+
             }
 
             asvRef = arSceneView

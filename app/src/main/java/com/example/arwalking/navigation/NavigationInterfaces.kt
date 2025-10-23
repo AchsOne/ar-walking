@@ -43,7 +43,11 @@ interface ArrowController {
         val directionYaw: Float = 0f,    // Arrow direction in degrees
         val confidence: Float = 0f,      // Display confidence [0.0-1.0]
         val style: ArrowStyle = ArrowStyle.DIRECTION,
-        val distanceToTrigger: Float = 0f
+        val distanceToTrigger: Float = 0f,
+        // Step-based cueing (computed from remaining distance and stride)
+        val remainingSteps: Int = -1,
+        val cueStage: CueStage = CueStage.NONE,
+        val shouldVibrate: Boolean = false
     )
     
     enum class ArrowStyle {
@@ -52,11 +56,14 @@ interface ArrowController {
         LANDMARK      // Arrow shown when landmark is recognized
     }
     
+    enum class CueStage { NONE, EARLY, MID, LATE, URGENT }
+    
     fun update(
         match: MapMatcher.Match,
         userYaw: Float,
         currentInstruction: String,
         hasLandmarkMatch: Boolean,
+        matchedLandmarkIds: List<String>,
         speed: Float
     ): ArrowState
 }

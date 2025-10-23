@@ -49,6 +49,12 @@ class LandmarkMatchingManager : ViewModel() {
     private val featuresCache = mutableMapOf<String, LandmarkFeatures>()
     private val detectionHistory = mutableMapOf<String, DetectionHistory>()
     
+    // Also support landmark image variants that are not explicitly in the route JSON but
+    // exist as asset companions of route landmarks, e.g. "<PrevLandmark>_L" (left) and
+    // in future "<PrevLandmark>_R" (right). We DO NOT load arbitrary assets, only these
+    // variants if present in assets and if the base landmark is used in the route.
+    private var additionalAssetLandmarks: List<RouteLandmarkData> = emptyList()
+    
     // Configuration
     private var autoAdvanceThreshold = 0.50f
     private var lastProcessedTime = 0L
@@ -82,13 +88,19 @@ class LandmarkMatchingManager : ViewModel() {
      */
     suspend fun preloadLandmarkFeatures(route: NavigationRoute, context: Context) {
         try {
-            val landmarks = getLandmarksFromRoute(route)
-            if (landmarks.isNotEmpty()) {
-                Log.d(TAG, "Pre-loading features for ${landmarks.size} landmarks")
-                loadLandmarkFeatures(landmarks, context)
+            // Gather route-declared landmarks
+            val routeLandmarks = getLandmarksFromRoute(route)
+            val baseIds = routeLandmarks.map { it.id }
+            // Also gather only asset companions of route landmarks (e.g., id_L and id_R if present)
+            additionalAssetLandmarks = getAssetVariantsForRoute(context, baseIds)
+            val allLandmarks = (routeLandmarks + additionalAssetLandmarks).distinctBy { it.id }
+            
+            if (allLandmarks.isNotEmpty()) {
+                Log.d(TAG, "Pre-loading features for ${allLandmarks.size} landmarks (route=${routeLandmarks.size}, asset-variants=${additionalAssetLandmarks.size})")
+                loadLandmarkFeatures(allLandmarks, context)
                 Log.d(TAG, "Pre-loading complete: ${featuresCache.size} landmarks ready")
             } else {
-                Log.d(TAG, "No landmarks found in route for pre-loading")
+                Log.d(TAG, "No landmarks found (route + asset variants) for pre-loading")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to pre-load landmark features", e)
@@ -138,7 +150,7 @@ class LandmarkMatchingManager : ViewModel() {
                 val currentStepLandmarks = currentRoute?.steps?.getOrNull(0)?.landmarks ?: emptyList()
                 Log.d(TAG, "🎯 Current step 0 expects landmarks: ${currentStepLandmarks.map { it.id }}")
                 
-                // Get landmarks for matching (should already be cached)
+                // Get landmarks for matching (route + asset-only)
                 val landmarks = getLandmarks(currentRoute)
                 if (landmarks.isEmpty()) {
                     Log.v(TAG, "📭 No landmarks available for matching")
@@ -253,6 +265,31 @@ class LandmarkMatchingManager : ViewModel() {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load landmark features", e)
             }
+        }
+    }
+    
+    /**
+     * Enumerate only asset variants for route landmarks: for each baseId, include baseId+"_L" and
+     * (future) baseId+"_R" if a corresponding image exists in assets/landmark_images.
+     */
+    private fun getAssetVariantsForRoute(context: Context, baseIds: List<String>): List<RouteLandmarkData> {
+        return try {
+            val files = context.assets.list("landmark_images")?.toList() ?: emptyList()
+            val available = files.filter { it.endsWith(".jpg", ignoreCase = true) }
+                .map { it.removeSuffix(".jpg").removeSuffix(".JPG") }
+                .toSet()
+            val candidates = buildList {
+                baseIds.forEach { id ->
+                    add("${'$'}id_L")
+                    // Future right-turn companion
+                    add("${'$'}id_R")
+                }
+            }
+            val picked = candidates.filter { it in available }.distinct()
+            picked.map { RouteLandmarkData(it) }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to list asset variants: ${e.message}")
+            emptyList()
         }
     }
     
@@ -408,10 +445,11 @@ class LandmarkMatchingManager : ViewModel() {
     }
     
     /**
-     * Get landmarks from current route
+     * Get landmarks from current route plus any additional asset-only landmarks
      */
     private fun getLandmarks(currentRoute: NavigationRoute?): List<RouteLandmarkData> {
-        return currentRoute?.steps?.flatMap { it.landmarks }?.distinctBy { it.id } ?: emptyList()
+        val routeLm = currentRoute?.steps?.flatMap { it.landmarks }?.distinctBy { it.id } ?: emptyList()
+        return (routeLm + additionalAssetLandmarks).distinctBy { it.id }
     }
     
     /**

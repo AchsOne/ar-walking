@@ -18,6 +18,11 @@ class SmartStepProgressionManager {
     }
     
     private val distanceTracker = DistanceTracker()
+
+    /** Add distance from external sensors (e.g., pedometer) */
+    fun addExternalDistance(deltaMeters: Float) {
+        distanceTracker.addExternalDistance(deltaMeters)
+    }
     
     /**
      * Strategy for step progression based on step characteristics
@@ -95,15 +100,15 @@ class SmartStepProgressionManager {
         nextStep: com.example.arwalking.NavigationStep,
         landmarkMatches: List<RouteViewModel.LandmarkMatch>
     ): ProgressionResult {
-        
+        // Only consider a tight window: current and next step
         val nextStepLandmarkIds = nextStep.landmarks.map { it.id }
         val nextStepMatch = landmarkMatches.find { match ->
-            nextStepLandmarkIds.contains(match.landmark.id) && 
+            nextStepLandmarkIds.contains(match.landmark.id) &&
             match.confidence >= LANDMARK_CONFIDENCE_THRESHOLD
         }
-        
+
         Log.d(TAG, "🎯 WAIT_FOR_LANDMARK: Looking for ${nextStepLandmarkIds}")
-        
+
         if (nextStepMatch != null) {
             Log.d(TAG, "✅ Next step landmark detected: ${nextStepMatch.landmark.id} (${(nextStepMatch.confidence * 100).toInt()}%)")
             return ProgressionResult.AdvanceToStep(
@@ -111,7 +116,8 @@ class SmartStepProgressionManager {
                 reason = "Landmark detected: ${nextStepMatch.landmark.id} (${(nextStepMatch.confidence * 100).toInt()}%)"
             )
         }
-        
+
+        // No advance if only current/other landmarks are seen; continue waiting for next-step ID
         // Fallback: If we've walked way too far, advance anyway
         val currentStepDistance = distanceTracker.getStepProgress()
         val expectedDistance = nextStep.expectedWalkDistance
@@ -122,7 +128,7 @@ class SmartStepProgressionManager {
                 reason = "Distance fallback: walked ${String.format("%.2f", currentStepDistance)}m (150% of expected)"
             )
         }
-        
+
         return ProgressionResult.NoAdvance("Waiting for next step landmark: $nextStepLandmarkIds")
     }
     
@@ -135,18 +141,33 @@ class SmartStepProgressionManager {
         nextStep: com.example.arwalking.NavigationStep?,
         landmarkMatches: List<RouteViewModel.LandmarkMatch>
     ): ProgressionResult {
-        
-        // Check landmark first (if any good matches)
+        // Windowed matching: consider only current and next step landmarks
+        val currentIdsAll = step.landmarks.map { it.id }.toSet()
+        val nextIds = nextStep?.landmarks?.map { it.id }?.toSet() ?: emptySet()
+
+        // Restrict current-step IDs if needed (e.g., only Entry when leaving office)
+        val allowedCurrent = allowedLandmarkIdsForStep(step)
+        val currentIds = if (allowedCurrent.isEmpty()) currentIdsAll else currentIdsAll.intersect(allowedCurrent)
+
+        // Check landmark first with window constraint
         val goodMatches = landmarkMatches.filter { it.confidence >= LANDMARK_CONFIDENCE_THRESHOLD }
-        if (goodMatches.isNotEmpty()) {
-            val bestMatch = goodMatches.first()
-            Log.d(TAG, "🎯 LANDMARK_OR_DISTANCE: Landmark detected: ${bestMatch.landmark.id} (${(bestMatch.confidence * 100).toInt()}%)")
+        val goodWindowMatches = goodMatches.filter { m -> m.landmark.id in currentIds || m.landmark.id in nextIds }
+
+        // Prefer next-step landmarks to advance exactly one step
+        val nextGood = goodWindowMatches.firstOrNull { it.landmark.id in nextIds }
+        if (nextGood != null) {
+            Log.d(TAG, "🎯 LANDMARK_OR_DISTANCE: Next-step landmark detected: ${nextGood.landmark.id} (${(nextGood.confidence * 100).toInt()}%)")
             return ProgressionResult.AdvanceToStep(
                 newStep = currentStep + 1,
-                reason = "Landmark: ${bestMatch.landmark.id} (${(bestMatch.confidence * 100).toInt()}%)"
+                reason = "Landmark: ${nextGood.landmark.id} (${(nextGood.confidence * 100).toInt()}%)"
             )
         }
-        
+
+        // If only current-step landmarks are seen, do not advance yet
+        if (goodWindowMatches.any { it.landmark.id in currentIds }) {
+            return ProgressionResult.NoAdvance("Current-step landmark detected; waiting for next-step landmark")
+        }
+
         // Fall back to distance
         val tolerance = getDistanceTolerance(step.expectedWalkDistance)
         if (distanceTracker.shouldAdvanceByDistance(step.expectedWalkDistance, tolerance)) {
@@ -157,7 +178,7 @@ class SmartStepProgressionManager {
             )
         }
         
-        return ProgressionResult.NoAdvance("Waiting for landmark or distance threshold")
+        return ProgressionResult.NoAdvance("Waiting for landmark or distance threshold (windowed to current/next)")
     }
     
     /**
@@ -202,6 +223,20 @@ class SmartStepProgressionManager {
             expectedDistance < 5.0 -> DISTANCE_TOLERANCE_MEDIUM_STEP  // 80% für mittlere Schritte
             else -> DISTANCE_TOLERANCE_LARGE_STEP                     // 70% für lange Schritte
         }
+    }
+
+    // Determine allowed landmark IDs for the current step.
+    // For "Verlassen Sie das Büro" (leave office) we only allow Entry-type landmarks to count,
+    // ignoring Office to avoid self-detection at the start.
+    private fun allowedLandmarkIdsForStep(step: com.example.arwalking.NavigationStep): Set<String> {
+        val instr = step.instruction.lowercase()
+        val hasEntry = step.landmarks.any { (it.type ?: "").equals("entry", ignoreCase = true) }
+        if (("verlassen" in instr || "leave" in instr) && hasEntry) {
+            return step.landmarks.filter { (it.type ?: "").equals("entry", ignoreCase = true) }
+                .map { it.id }
+                .toSet()
+        }
+        return emptySet()
     }
     
     /**
