@@ -272,6 +272,8 @@ val elapsed = nowMs - lastReliableMatchMs
                                 }
                                 val targetPose = Pose.makeTranslation(tx, ty, tz)
                                 arSceneView.session?.createAnchor(targetPose)?.let { anchor ->
+                                    // Set arrow type for destination (straight)
+                                    controller.setArrowTypeFromDirection(0f)
                                     controller.placeAnchor(arSceneView.scene, anchor, 0f)
                                 }
                             }
@@ -331,7 +333,7 @@ val elapsed = nowMs - lastReliableMatchMs
                 
                 // Use direction from arrow state (calculated by ArrowControllerImpl)
                 val targetYaw = arrowState.directionYaw
-                Log.d("ARCoreArrow", "Arrow visible: step=$currentStep, yaw=${targetYaw}°")
+                Log.w("ARCoreArrow", "*** ARROW DIRECTION *** step=$currentStep, targetYaw=${targetYaw}°, arrowState.visible=${arrowState.visible}, arrowState.style=${arrowState.style}")
 
                 // Persistent Arrow Placement - Anchor bleibt nach erfolgreichem Platzieren bestehen
                 try {
@@ -378,6 +380,9 @@ val elapsed = nowMs - lastReliableMatchMs
                         val anchor = arSceneView.session?.createAnchor(targetPose)
 
 if (anchor != null) {
+                            // Set arrow type based on direction BEFORE placing anchor
+                            Log.w("ARCoreArrow", "*** CALLING setArrowTypeFromDirection with targetYaw=${targetYaw}° ***")
+                            controller.setArrowTypeFromDirection(targetYaw)
                             controller.placeAnchor(arSceneView.scene, anchor, targetYaw)
                             controller.showArrow()
                             controller.setCurrentStepKey(stepKey) // Markiere aktuellen Step
