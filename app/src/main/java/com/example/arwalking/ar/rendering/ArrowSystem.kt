@@ -52,13 +52,13 @@ data class ArrowAbbiegenConfig(
     val midScale: Float = 1.02f,
 
     // Farben (Leuchtendes Cyan/Blau mit Glow)
-    val colBack: Color = Color(0.90f, 0.95f, 1.0f),   // helles Blau-Weiß für Outline
-    val colMid:  Color = Color(0.15f, 0.50f, 0.85f),  // mittleres Cyan-Blau
-    val colTop:  Color = Color(0.30f, 0.70f, 1.0f),   // leuchtendes helles Blau
+    val colBack: Color = Color(0.75f, 0.85f, 0.95f),  // etwas dunklerer Blau-Weiß-Rand
+    val colMid:  Color = Color(0.10f, 0.35f, 0.65f),  // dunkleres Cyan-Blau
+    val colTop:  Color = Color(0.20f, 0.55f, 0.85f),  // dunkleres helles Blau
 
     // Glow-Layer (zusätzlicher äußerer Layer für Leuchteffekt)
     val glowScale: Float = 1.15f,                      // noch größer als Back-Layer
-    val colGlow: Color = Color(0.50f, 0.85f, 1.0f, 0.6f), // halbtransparentes leuchtendes Blau
+    val colGlow: Color = Color(0.35f, 0.65f, 0.95f, 0.6f), // dunkleres leuchtendes Blau (gleiche Alpha)
 
     // Stack-Einstellungen
     val stackCount: Int = 3,
@@ -600,12 +600,35 @@ class ArrowRenderer3D(private val context: Context) {
             if (arrowAbbiegen.rootNode.parent != anchorNode) {
                 arrowAbbiegen.setParent(anchorNode)
             }
-            // Fixed offset above ground in WORLD space; cancel any parent rotation
+            // SPECIAL HANDLING FOR BLUE ARROW: Position 2m in front of camera and rotate 90° upright
             anchorNode?.let { an ->
-                val wp = an.worldPosition
-                val worldPos = Vector3(wp.x, wp.y + 0.12f, wp.z)
-                arrowAbbiegen.setWorldPose(worldPos, yawDeg)
-                Log.d("ArrowPos", "ArrowAbbiegen worldRotation after place: ${arrowAbbiegen.rootNode.worldRotation}")
+                // Get camera pose for positioning 2m ahead
+                val scene = an.scene
+                val camera = scene?.camera
+                if (camera != null) {
+                    val cameraPose = camera.worldPosition
+                    val cameraForward = camera.forward
+                    
+                    // Position 2m in front of camera
+                    val arrowPosition = Vector3(
+                        cameraPose.x + cameraForward.x * 2.0f,  // 2m vor Kamera
+                        cameraPose.y - 0.5f,                     // etwas unter Kamera-Höhe
+                        cameraPose.z + cameraForward.z * 2.0f   // 2m vor Kamera (Z)
+                    )
+                    
+                    // Set position and rotate 90° around X-axis to make it upright
+                    arrowAbbiegen.rootNode.worldPosition = arrowPosition
+                    arrowAbbiegen.rootNode.worldRotation = Quaternion.axisAngle(Vector3(1f, 0f, 0f), 90f)
+                    
+                    Log.d("ArrowPos", "*** BLUE ARROW SPECIAL *** position=(${"%.2f".format(arrowPosition.x)}, ${"%.2f".format(arrowPosition.y)}, ${"%.2f".format(arrowPosition.z)}), rotation=90° upright")
+                } else {
+                    // Fallback wenn keine Kamera verfügbar
+                    val wp = an.worldPosition
+                    val worldPos = Vector3(wp.x, wp.y + 0.12f, wp.z)
+                    arrowAbbiegen.setWorldPose(worldPos, yawDeg)
+                    arrowAbbiegen.rootNode.worldRotation = Quaternion.axisAngle(Vector3(1f, 0f, 0f), 90f)
+                    Log.d("ArrowPos", "*** BLUE ARROW FALLBACK *** rotated 90° upright")
+                }
             }
             arrowAbbiegen.ensureRenderable()
         } else {
@@ -626,7 +649,8 @@ class ArrowRenderer3D(private val context: Context) {
     fun updateYaw(yawDeg: Float) {
         // Keep arrow pointing straight ahead regardless of anchor/camera rotation
         if (isTurning) {
-            try { arrowAbbiegen.rootNode.worldRotation = Quaternion.identity() } catch (_: Exception) {}
+            // SPECIAL: Keep blue arrow upright (90° rotation) instead of identity
+            try { arrowAbbiegen.rootNode.worldRotation = Quaternion.axisAngle(Vector3(1f, 0f, 0f), 90f) } catch (_: Exception) {}
             arrowAbbiegen.ensureRenderable()
         } else {
             try { arrowRenderer.rootNode.worldRotation = Quaternion.identity() } catch (_: Exception) {}
@@ -644,6 +668,8 @@ class ArrowRenderer3D(private val context: Context) {
                 arrowAbbiegen.setParent(null)
                 arrowAbbiegen.setParent(anchorNode)
             }
+            // SPECIAL: Keep blue arrow upright (90° rotation)
+            arrowAbbiegen.rootNode.worldRotation = Quaternion.axisAngle(Vector3(1f, 0f, 0f), 90f)
             arrowAbbiegen.ensureRenderable()
         } else {
             if (anchorNode != null && arrowRenderer.rootNode.parent != anchorNode) {
