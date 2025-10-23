@@ -14,9 +14,7 @@ import com.google.ar.core.Frame
 import com.google.ar.core.Session
 import com.example.arwalking.navigation.*
 import com.example.arwalking.managers.PositionTrackingManager
-import com.example.arwalking.managers.StepProgressionManager
 import com.example.arwalking.managers.LandmarkMatchingManager
-import com.example.arwalking.managers.StepSensorManager
 import com.example.arwalking.navigation.SmartStepProgressionManager
 import com.example.arwalking.navigation.ProgressionResult
 import com.example.arwalking.navigation.Vec3
@@ -212,7 +210,6 @@ class RouteViewModel : ViewModel() {
     }
     // Manager instances
     private val positionTrackingManager = PositionTrackingManager()
-    private val stepProgressionManager = StepProgressionManager()
     private val landmarkMatchingManager = LandmarkMatchingManager()
     private val smartStepProgressionManager = SmartStepProgressionManager()
     
@@ -221,24 +218,7 @@ class RouteViewModel : ViewModel() {
     // val pedometerSpeedMps: StateFlow<Float> = _pedometerSpeedMps.asStateFlow()
     // private var lastStepEventTimeMs: Long? = null
 
-    private val stepSensorManager = StepSensorManager { stepsDelta ->
-        // Convert steps to distance and feed into smart progression
-        val deltaMeters = (stepsDelta * DEFAULT_STRIDE_M).toFloat()
-        smartStepProgressionManager.addExternalDistance(deltaMeters)
-        
-        // Schrittbasierte Geschwindigkeitsableitung deaktiviert
-        // val now = System.currentTimeMillis()
-        // val last = lastStepEventTimeMs
-        // if (last != null) {
-        //     val dtSec = ((now - last).coerceAtLeast(1L)) / 1000f
-        //     val instSpeed = (stepsDelta * DEFAULT_STRIDE_M) / dtSec
-        //     val ema = SPEED_EMA_ALPHA * instSpeed + (1 - SPEED_EMA_ALPHA) * _pedometerSpeedMps.value
-        //     _pedometerSpeedMps.value = ema.coerceIn(0f, 3.0f)
-        // }
-        // lastStepEventTimeMs = now
-
-        Log.d(TAG, "Pedometer: +$stepsDelta steps (~${String.format("%.2f", deltaMeters)}m)")
-    }
+    // Step sensor tracking removed
     
     // Route state
     private val _currentRoute = MutableStateFlow<NavigationRoute?>(null)
@@ -554,14 +534,6 @@ class RouteViewModel : ViewModel() {
 fun initFeatureMapping(context: Context) {
         setFeatureMappingEnabled(true)
         
-        // Start pedometer fallback for distance tracking
-        try {
-            stepSensorManager.start(context)
-            Log.d(TAG, "Step sensor started")
-        } catch (e: Exception) {
-            Log.w(TAG, "Step sensor unavailable: ${e.message}")
-        }
-        
         // Pre-load landmark features if route is available
         val route = _currentRoute.value
         if (route != null) {
@@ -620,7 +592,6 @@ fun initFeatureMapping(context: Context) {
         try {
             positionTrackingManager.cleanup()
             landmarkMatchingManager.cleanup()
-            stepSensorManager.stop()
         } catch (e: Exception) {
             Log.w(TAG, "Manager cleanup failed", e)
         }

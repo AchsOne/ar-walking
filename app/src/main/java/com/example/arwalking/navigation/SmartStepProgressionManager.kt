@@ -5,8 +5,8 @@ import com.example.arwalking.NavigationRoute
 import com.example.arwalking.RouteViewModel
 
 /**
- * Smart Step Progression Manager that combines landmark detection with distance tracking
- * for intelligent route advancement
+ * Smart Step Progression Manager that combines landmark detection with ARCore distance tracking
+ * for intelligent route advancement (no pedometer usage)
  */
 class SmartStepProgressionManager {
     companion object {
@@ -19,11 +19,6 @@ class SmartStepProgressionManager {
     
     private val distanceTracker = DistanceTracker()
 
-    /** Add distance from external sensors (e.g., pedometer) */
-    fun addExternalDistance(deltaMeters: Float) {
-        distanceTracker.addExternalDistance(deltaMeters)
-    }
-    
     /**
      * Strategy for step progression based on step characteristics
      */

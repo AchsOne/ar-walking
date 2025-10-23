@@ -50,14 +50,10 @@ class DistanceTracker {
     }
 
     /**
-     * Add external distance contribution (e.g., pedometer/step counter)
+     * (Removed) External distance contribution
+     * Kept intentionally unimplemented to avoid pedometer usage.
      */
-    fun addExternalDistance(deltaMeters: Float) {
-        if (deltaMeters <= 0f) return
-        totalDistanceWalked += deltaMeters
-        currentStepDistanceWalked += deltaMeters
-        Log.d(TAG, "➕ External distance: +${String.format("%.2f", deltaMeters)}m (step=${String.format("%.2f", currentStepDistanceWalked)}m, total=${String.format("%.2f", totalDistanceWalked)}m)")
-    }
+    // fun addExternalDistance(deltaMeters: Float) { /* no-op: pedometer disabled */ }
     
     /**
      * Reset distance for new step
