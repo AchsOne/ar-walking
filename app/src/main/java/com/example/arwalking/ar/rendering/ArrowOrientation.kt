@@ -11,6 +11,8 @@ object ArrowOrientation {
     // Configuration constants
     private const val BLUE_DISTANCE_M = 2.0f
     private const val BLUE_Y_OFFSET_M = -0.5f
+    private const val GREEN_DISTANCE_M = 2.0f
+    private const val GREEN_Y_OFFSET_M = -0.5f
 
     // Pre-compiled regex for better performance
     private val HTML_TAG_REGEX = Regex("</?b>")
@@ -104,6 +106,17 @@ object ArrowOrientation {
             camPos.x + fwd.x * BLUE_DISTANCE_M,
             camPos.y + BLUE_Y_OFFSET_M,
             camPos.z + fwd.z * BLUE_DISTANCE_M
+        )
+    }
+
+    fun greenPosition(camera: Camera): Vector3 {
+        val camPos = camera.worldPosition
+        val fwd = camera.forward
+
+        return Vector3(
+            camPos.x + fwd.x * GREEN_DISTANCE_M,
+            camPos.y + GREEN_Y_OFFSET_M,
+            camPos.z + fwd.z * GREEN_DISTANCE_M
         )
     }
 

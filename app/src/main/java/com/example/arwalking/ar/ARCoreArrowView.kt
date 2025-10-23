@@ -179,9 +179,9 @@ val elapsed = nowMs - lastReliableMatchMs
                     if (alreadyAnchored) {
                         when {
                             withinSticky -> {
-                                // keep showing existing arrow; proceed no further this frame
-                                Log.v("ARCoreArrow", "Sticky keep: showing anchored arrow (elapsed=${elapsed}ms)")
-                                return@addOnUpdateListener
+                                // Keep existing arrow but continue to update orientation from pose
+                                Log.v("ARCoreArrow", "Sticky keep: continue updating orientation (elapsed=${elapsed}ms)")
+                                // do not return; allow orientation update below
                             }
                             elapsed <= anchorClearMs -> {
                                 // hide visuals but keep anchor to allow fast recovery
@@ -236,10 +236,11 @@ val elapsed = nowMs - lastReliableMatchMs
                         // Keep existing visuals if already anchored (sticky), otherwise skip drawing silently.
                         if (!controller.isAnchored()) {
                             Log.v("ARCoreArrow", "Arrow suppressed (no anchor): landmark not in current/next two steps")
+                            return@addOnUpdateListener
                         } else {
-                            Log.v("ARCoreArrow", "Arrow kept (sticky): landmark not in current/next two steps")
+                            Log.v("ARCoreArrow", "Arrow kept (sticky): landmark not in current/next two steps; continue orientation update")
+                            // Continue without placing new anchors
                         }
-                        return@addOnUpdateListener
                     }
                 }
 
@@ -322,19 +323,33 @@ val elapsed = nowMs - lastReliableMatchMs
                 }
                 
                 if (!shouldShowArrow) {
-                    Log.v("ARCoreArrow", "Arrow conditions not met for step $currentStep")
-                    return@addOnUpdateListener
+                    if (!controller.isAnchored()) {
+                        Log.v("ARCoreArrow", "Arrow conditions not met for step $currentStep (no anchor) -> skip")
+                        return@addOnUpdateListener
+                    } else {
+                        Log.v("ARCoreArrow", "Arrow conditions not met for step $currentStep but anchor exists -> continue updating orientation")
+                    }
                 }
                 
                 // ========================================
-                // Direction Calculation (based on instruction via calculateArrowDirection)
+                // Direction Calculation using local camera-aligned origin (rebase)
                 // ========================================
                 val relativeYaw = com.example.arwalking.ar.rendering.ArrowOrientation.calculateYawFromInstruction(instructionForYaw)
-                // val cameraYawDeg = try { com.example.arwalking.ar.rendering.ArrowOrientation.cameraYawFromPose(frame.camera.pose) } catch (_: Exception) { 0f }
-                // cameraYawFromPose has been disabled for debugging arrow direction.
-                val cameraYawDeg = 0f // cameraYawFromPose disabled for debugging arrow direction
-                val targetYaw = com.example.arwalking.ar.rendering.ArrowOrientation.worldYaw(cameraYawDeg, relativeYaw)
-                Log.w("ARCoreArrow", "*** ARROW DIRECTION (calc) *** step=$currentStep, instr='${instructionForYaw}', camYaw=${"%.1f".format(cameraYawDeg)}°, relYaw=${"%.1f".format(relativeYaw)}°, targetYaw=${"%.1f".format(targetYaw)}°")
+
+                val controllerForYaw = (arSceneView.tag as? ArrowRenderer3D)
+                val dPose = try { frame.camera.displayOrientedPose } catch (_: Exception) { frame.camera.pose }
+                val q = dPose.rotationQuaternion
+                val currentYawDeg = Math.toDegrees(
+                    Math.atan2(
+                        2.0 * (q[3] * q[1] + q[0] * q[2].toDouble()),
+                        1.0 - 2.0 * (q[1] * q[1] + q[2] * q[2])
+                    )
+                ).toFloat()
+                val resetYawDeg = controllerForYaw?.ensureResetYaw(currentYawDeg) ?: currentYawDeg
+
+                val rebasedYaw = currentYawDeg - resetYawDeg
+                val targetYaw = rebasedYaw + relativeYaw
+                Log.w("ARCoreArrow", "*** ARROW DIRECTION (calc) *** step=$currentStep, instr='${instructionForYaw}', rebasedYaw=${"%.1f".format(rebasedYaw)}°, relYaw=${"%.1f".format(relativeYaw)}°, targetYaw=${"%.1f".format(targetYaw)}°")
 
                 // Persistent Arrow Placement - Anchor bleibt nach erfolgreichem Platzieren bestehen
                 try {
@@ -401,12 +416,22 @@ if (anchor != null) {
                             Log.e("ARCoreArrow", "Failed to create anchor for $stepKey")
                         }
                     } else {
-// Do NOT update yaw after placement; keep orientation constant
+                        // Keep anchor; we'll update orientation below each frame
                         controller.showArrow() // ensure visible again if previously hidden
-                        Log.v("ARCoreArrow", "Arrow persistent for $stepKey (yaw unchanged)")
+                        Log.v("ARCoreArrow", "Arrow persistent for $stepKey (will update yaw from pose)")
                     }
                 } catch (e: Exception) {
                     Log.e("ARCoreArrow", "Arrow placement error: ${e.message}", e)
+                }
+
+                // Always update arrow orientation/position from current pose and instruction yaw
+                try {
+                    val controller2 = (arSceneView.tag as? ArrowRenderer3D)
+                    if (controller2 != null && controller2.isAnchored()) {
+                        controller2.updateFromPose(arSceneView.scene, targetYaw)
+                    }
+                } catch (e: Exception) {
+                    Log.w("ARCoreArrow", "updateFromPose failed: ${e.message}")
                 }
 
             }

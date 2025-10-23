@@ -461,6 +461,37 @@ class ArrowRenderer3D(private val context: Context) {
     private var currentStepKey: String? = null
     private var isTurning = false
 
+    // Local origin (camera-aligned) yaw at reset time; null until set
+    private var resetYawDeg: Float? = null
+
+    fun ensureResetYaw(yawDeg: Float): Float {
+        if (resetYawDeg == null) resetYawDeg = yawDeg
+        return resetYawDeg!!
+    }
+
+    fun clearResetYaw() { resetYawDeg = null }
+
+    fun getResetYaw(): Float? = resetYawDeg
+
+    fun updateFromPose(scene: Scene, yawDeg: Float) {
+        if (isTurning) {
+            // Blue arrow: keep relative to camera every frame
+            val camera = scene.camera
+            if (camera != null) {
+                val pos = ArrowOrientation.bluePosition(camera)
+                arrowAbbiegen.rootNode.worldPosition = pos
+                arrowAbbiegen.rootNode.worldRotation = ArrowOrientation.blueRotation(yawDeg)
+            }
+        } else {
+            // Green arrow: camera-relative placement and heading every frame
+            val camera = scene.camera
+            if (camera != null) {
+                val pos = ArrowOrientation.greenPosition(camera)
+                arrowRenderer.rootNode.worldPosition = pos
+                arrowRenderer.rootNode.worldRotation = ArrowOrientation.greenRotation(yawDeg)
+            }
+        }
+    }
 
     fun setArrowTypeFromLandmark(landmarkIds: List<String>) {
         val wasTurning = isTurning
