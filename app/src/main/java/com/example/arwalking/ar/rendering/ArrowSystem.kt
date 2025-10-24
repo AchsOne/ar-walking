@@ -474,10 +474,8 @@ class ArrowRenderer3D(private val context: Context) {
     fun getResetYaw(): Float? = resetYawDeg
 
     fun updateFromPose(scene: Scene, yawDeg: Float) {
-        // If frozen, keep both position and rotation unchanged
-        if (isFrozen()) return
         if (isTurning) {
-            // Blue arrow: keep relative to camera every frame until frozen
+            // Blue arrow: keep relative to camera every frame
             val camera = scene.camera
             if (camera != null) {
                 val pos = ArrowOrientation.bluePosition(camera)
@@ -485,22 +483,15 @@ class ArrowRenderer3D(private val context: Context) {
                 arrowAbbiegen.rootNode.worldRotation = ArrowOrientation.blueRotation(yawDeg)
             }
         } else {
-            // Green arrow: update heading relative to camera until frozen
-            anchorNode?.let { an ->
-                val wp = an.worldPosition
-                val worldPos = Vector3(wp.x, wp.y + 0.12f, wp.z)
-                arrowRenderer.setWorldPose(worldPos, yawDeg)
+            // Green arrow: camera-relative placement and heading every frame
+            val camera = scene.camera
+            if (camera != null) {
+                val pos = ArrowOrientation.greenPosition(camera)
+                arrowRenderer.rootNode.worldPosition = pos
+                arrowRenderer.rootNode.worldRotation = ArrowOrientation.greenRotation(yawDeg)
             }
         }
     }
-
-    private var frozen: Boolean = false
-    private var frozenLandmarkId: String? = null
-
-    fun isFrozen(): Boolean = frozen
-    fun getFrozenLandmarkId(): String? = frozenLandmarkId
-    fun freezeForLandmark(landmarkId: String?) { frozen = true; frozenLandmarkId = landmarkId }
-    fun unfreeze() { frozen = false; frozenLandmarkId = null }
 
     fun setArrowTypeFromLandmark(landmarkIds: List<String>) {
         val wasTurning = isTurning

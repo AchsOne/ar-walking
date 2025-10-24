@@ -231,16 +231,6 @@ val elapsed = nowMs - lastReliableMatchMs
                     val matchesNow = try { routeViewModel.currentMatches.value } catch (_: Exception) { emptyList() }
                     val best = matchesNow.maxByOrNull { it.confidence }
                     val allowedMatch = best != null && best.confidence >= MIN_CONFIDENCE_FOR_ARROW && stepsWindowIds.contains(best.landmark.id)
-
-                    // Freeze/unfreeze logic based on landmark recognition
-                    val frozen = controller.isFrozen()
-                    val frozenId = controller.getFrozenLandmarkId()
-                    val newLandmarkRecognized = allowedMatch && best != null && best.landmark.id != frozenId
-                    if (frozen && newLandmarkRecognized) {
-                        controller.unfreeze()
-                        Log.d("ARCoreArrow", "Unfroze arrow due to new landmark: ${best!!.landmark.id}")
-                    }
-
                     if (!allowedMatch) {
                         // Do not place/update a new arrow when the match does not correspond to current/next two steps.
                         // Keep existing visuals if already anchored (sticky), otherwise skip drawing silently.
@@ -366,8 +356,7 @@ val elapsed = nowMs - lastReliableMatchMs
                     val stepKey = "step_${currentStep}_${instructionForYaw.hashCode()}"
                     val isNewStep = controller.getCurrentStepKey() != stepKey
 
-                    val frozenNow = controller.isFrozen()
-                    if ((!controller.isAnchored() || (isNewStep && hasReliableLandmark)) && !frozenNow) {
+                    if (!controller.isAnchored() || (isNewStep && hasReliableLandmark)) {
                         // Only clear and re-anchor on step change with reliable landmark
                         if (isNewStep && hasReliableLandmark && controller.isAnchored()) {
                             controller.clear()
@@ -422,15 +411,7 @@ if (anchor != null) {
                             controller.placeAnchor(arSceneView.scene, anchor, targetYaw)
                             controller.showArrow()
                             controller.setCurrentStepKey(stepKey) // Markiere aktuellen Step
-                            // Freeze after placement until next landmark is recognized
-                            val matchesNow2 = try { routeViewModel.currentMatches.value } catch (_: Exception) { emptyList() }
-                            val allowedIds2 = try { currentRoute.steps.getOrNull(selectedStepIndex)?.landmarks?.map { it.id }?.toSet() } catch (_: Exception) { null } ?: emptySet()
-                            val bestAllowed = matchesNow2
-                                .filter { it.confidence >= MIN_CONFIDENCE_FOR_ARROW && allowedIds2.contains(it.landmark.id) }
-                                .maxByOrNull { it.confidence }
-                            val frozenId = bestAllowed?.landmark?.id
-                            controller.freezeForLandmark(frozenId)
-                            Log.d("ARCoreArrow", "Anchor placed+frozen for $stepKey at (${"%.2f".format(targetX)}, ${"%.2f".format(targetY)}, ${"%.2f".format(targetZ)}), yaw=${"%.1f".format(targetYaw)}°, frozenId=${frozenId}")
+                            Log.d("ARCoreArrow", "Anchor placed for $stepKey at (${"%.2f".format(targetX)}, ${"%.2f".format(targetY)}, ${"%.2f".format(targetZ)}), yaw=${"%.1f".format(targetYaw)}°")
                         } else {
                             Log.e("ARCoreArrow", "Failed to create anchor for $stepKey")
                         }
@@ -446,7 +427,7 @@ if (anchor != null) {
                 // Always update arrow orientation/position from current pose and instruction yaw
                 try {
                     val controller2 = (arSceneView.tag as? ArrowRenderer3D)
-                    if (controller2 != null && controller2.isAnchored() && !controller2.isFrozen()) {
+                    if (controller2 != null && controller2.isAnchored()) {
                         controller2.updateFromPose(arSceneView.scene, targetYaw)
                     }
                 } catch (e: Exception) {
