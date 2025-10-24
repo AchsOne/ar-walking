@@ -185,21 +185,27 @@ fun NavigationDrawer(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .offset(y = 25.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color.Black.copy(alpha = 0.6f))
-                .border(
-                    width = 1.dp,
-                    color = Color.White.copy(alpha = 0.2f),
-                    shape = RoundedCornerShape(24.dp)
-                )
-                .heightIn(min = 48.dp)
-                .clickable { onNextStep() }
-                .padding(horizontal = 16.dp, vertical = 10.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp),
+            contentAlignment = Alignment.Center
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .border(
+                        width = 1.dp,
+                        color = Color.White.copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(24.dp)
+                    )
+                    .heightIn(min = 48.dp)
+                    .clickable { onNextStep() }
+                    .padding(horizontal = 16.dp, vertical = 20.dp)
             ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                 Text(
                     text = "Nächster Schritt",
                     color = Color.White,
@@ -217,6 +223,7 @@ fun NavigationDrawer(
                         .graphicsLayer { scaleX = -1f } // Spiegeln, damit der Chevron nach rechts zeigt
                 )
             }
+        }
         }
 
         // Maximize/Minimize button positioned on the right

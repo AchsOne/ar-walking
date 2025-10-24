@@ -220,13 +220,13 @@ private fun NavigationOverlay(
                 .padding(top = 110.dp, end = 16.dp)
         )
 
-        ARInfoIsland(
+      /*  ARInfoIsland(
             routeViewModel = routeViewModel,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(horizontal = 16.dp)
                 .offset(y = 140.dp)
-        )
+        )*/
 
         val navigationSteps = currentRoute?.steps?.map { step ->
             val iconRes = when {

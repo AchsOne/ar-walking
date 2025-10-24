@@ -69,7 +69,7 @@ fun HomeScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val startOptions = listOf(
-        "Office Prof. Dr. Ludwig (PT 3.0.84C)",
+        "Office Prof. Dr. Ludwig",
         "Office Prof. Dr. Wolff (PT 3.0.60) (coming soon)",
         "Cafeteria (coming soon)",
         "Parking (coming soon)",
@@ -82,8 +82,7 @@ fun HomeScreen(
     )
 
     val destinationOptions = listOf(
-        "Main Entrance",
-        "Office Prof. Dr. Ludwig (PT 3.0.84C) (coming soon)",
+        "Office Prof. Dr. Ludwig (PT 3.0.84C)",
         "Office Prof. Dr. Wolff (PT 3.0.60) (coming soon)",
         "Cafeteria (coming soon)",
         "Parking (coming soon)",
@@ -138,7 +137,9 @@ fun HomeScreen(
     Box(modifier = modifier.fillMaxSize()) {
         BackgroundImage()
         TopGradient()
-        BottomGradient()
+        BottomGradient(
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
 
         Logo(modifier = Modifier.align(Alignment.TopCenter))
 
@@ -244,16 +245,16 @@ private fun TopGradient() {
 }
 
 @Composable
-private fun BottomGradient() {
+private fun BottomGradient(modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .requiredHeight(200.dp)
+            .height(220.dp)
             .background(
                 brush = GradientUtils.safeVerticalGradient(
                     colors = listOf(
                         Color.Transparent,
-                        Color.Black.copy(alpha = 0.3f)
+                        Color.Black.copy(alpha = 0.8f)
                     )
                 )
             )
@@ -551,8 +552,8 @@ private fun isRouteAvailable(start: String, destination: String): Boolean {
     val cleanStart = start.replace(" (coming soon)", "")
     val cleanDestination = destination.replace(" (coming soon)", "")
 
-    return cleanStart == "Office Prof. Dr. Ludwig (PT 3.0.84C)"
-            && cleanDestination == "Main Entrance"
+    return cleanStart == "Office Prof. Dr. Ludwig"
+            && cleanDestination == "Office Prof. Dr. Ludwig (PT 3.0.84C)"
 }
 
 @Preview(widthDp = 412, heightDp = 917)
