@@ -129,6 +129,7 @@ class SmartStepProgressionManager {
     
     /**
      * Either landmark detection or distance threshold works
+     * (Komplexe Logik mit Unterstützung von LLM erstellt)
      */
     private fun analyzeLandmarkOrDistance(
         currentStep: Int,
@@ -198,6 +199,7 @@ class SmartStepProgressionManager {
     
     /**
      * Complex hybrid logic for special cases
+     * (Mit Unterstützung von LLM erstellt)
      */
     private fun analyzeHybrid(
         currentStep: Int,

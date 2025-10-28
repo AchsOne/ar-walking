@@ -48,8 +48,8 @@ import com.example.arwalking.components.*
 import com.example.arwalking.ar.rendering.*
 import com.example.arwalking.data.FavoritesRepository
 import com.example.arwalking.ui.theme.GradientUtils
-import components.NavigationDrawer
-import components.NavigationStepData
+import com.example.arwalking.components.NavigationDrawer
+import com.example.arwalking.components.NavigationStepData
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 

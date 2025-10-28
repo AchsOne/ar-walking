@@ -229,6 +229,7 @@ class ArrowControllerImpl(
     
     // Confirmation arrow direction is not set here anymore; AR layer handles orientation via calculateArrowDirection
     
+    // (Mit Unterstützung von LLM erstellt)
     private fun calculateDistanceBasedConfidence(
         distanceToManeuver: Float,
         triggerDistance: Float,

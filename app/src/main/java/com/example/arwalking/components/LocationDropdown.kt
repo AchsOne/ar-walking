@@ -2,73 +2,47 @@ package com.example.arwalking.components
 
 import android.os.Build
 import androidx.annotation.RequiresApi
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredHeight
-import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.foundation.layout.requiredWidth
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.*
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.*
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.example.arwalking.R
 
+/**
+ * Ein elegantes Dropdown für Locationauswahl mit intelligenter Suche.
+ * Unterstützt Fuzzy-Search und verschiedene Matching-Strategien,
+ * damit Benutzer schnell finden was sie suchen - auch mit Tippfehlern.
+ */
 @RequiresApi(Build.VERSION_CODES.S)
 @Composable
 fun LocationDropdown(
@@ -89,13 +63,15 @@ fun LocationDropdown(
     val focusRequester = remember { FocusRequester() }
     var searchText by remember { androidx.compose.runtime.mutableStateOf("") }
 
-    // Hilfsfunktion für Fuzzy Matching
+    // Intelligente Fuzzy-Suche: Findet auch Begriffe mit kleinen Tippfehlern
+    // Zum Beispiel: "Cafetria" findet trotzdem "Cafeteria"
+    // (Mit Unterstützung von LLM erstellt)
     fun fuzzyMatch(text: String, query: String): Boolean {
-        if (query.length < 2) return false
+        if (query.length < 2) return false // Zu kurze Suchen sind nicht sinnvoll
         var textIndex = 0
         var queryIndex = 0
         var mismatches = 0
-        val maxMismatches = 1 // Erlaube maximal 1 fehlenden/falschen Buchstaben
+        val maxMismatches = 1 // Großzügig: Ein Tippfehler ist okay
 
         while (textIndex < text.length && queryIndex < query.length) {
             if (text[textIndex] == query[queryIndex]) {
@@ -110,30 +86,32 @@ fun LocationDropdown(
         return queryIndex >= query.length - maxMismatches
     }
 
-    // Erweiterte Suchfunktion mit mehreren Matching-Strategien
+    // Mehrstufiger Such-Algorithmus: Von exakt bis flexibel
+    // Je mehr Treffer, desto besser für den Benutzer
+    // (Mit Unterstützung von LLM erstellt)
     val filteredOptions = if (searchText.isEmpty()) {
-        options
+        options // Keine Suche = alle Optionen anzeigen
     } else {
         val searchQuery = searchText.trim().lowercase()
         options.filter { option ->
             val optionLower = option.lowercase()
 
-            // 1. Exact match (höchste Priorität)
+            // Strategie 1: Direkter Treffer ("Office" findet "Office Prof.")
             optionLower.contains(searchQuery) ||
 
-                    // 2. Word-based matching - suche in jedem Wort
-                    option.split(" ", "(", ")", ".", "-").any { word ->
-                        word.lowercase().startsWith(searchQuery)
-                    } ||
+            // Strategie 2: Wort-Anfang-Matching ("Prof" findet "Office Prof. Dr.")
+            option.split(" ", "(", ")", ".", "-").any { word ->
+                word.lowercase().startsWith(searchQuery)
+            } ||
 
-                    // 3. Acronym matching - erste Buchstaben der Wörter
-                    option.split(" ", "(", ")", ".", "-")
-                        .mapNotNull { it.firstOrNull()?.lowercase() }
-                        .joinToString("")
-                        .contains(searchQuery) ||
+            // Strategie 3: Akronym-Suche ("odl" findet "Office Dr. Ludwig")
+            option.split(" ", "(", ")", ".", "-")
+                .mapNotNull { it.firstOrNull()?.lowercase() }
+                .joinToString("")
+                .contains(searchQuery) ||
 
-                    // 4. Fuzzy matching - erlaubt einzelne fehlende Zeichen
-                    fuzzyMatch(optionLower, searchQuery)
+            // Strategie 4: Fuzzy-Match für Tippfehler
+            fuzzyMatch(optionLower, searchQuery)
         }.sortedWith(compareBy<String> { option ->
             val optionLower = option.lowercase()
             when {
@@ -150,6 +128,7 @@ fun LocationDropdown(
     }
 
     // Hilfsfunktion für Hervorhebung des Suchtexts
+    // (Mit Unterstützung von LLM erstellt)
     fun highlightSearchText(text: String, searchQuery: String): AnnotatedString {
         if (searchQuery.isEmpty()) {
             return AnnotatedString(text)

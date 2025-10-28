@@ -106,6 +106,7 @@ class DistanceTracker {
     
     /**
      * Calculate 3D distance between two positions
+     * (Standard euklidische Distanz-Formel)
      */
     private fun calculateDistance(pos1: Vec3, pos2: Vec3): Float {
         val dx = pos2.x - pos1.x

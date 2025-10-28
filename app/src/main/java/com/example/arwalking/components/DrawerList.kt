@@ -1,51 +1,17 @@
-package components
+package com.example.arwalking.components
 
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.graphics.graphicsLayer
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
-import com.example.arwalking.ui.theme.GradientUtils
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
@@ -56,10 +22,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.arwalking.R
+import com.example.arwalking.ui.theme.GradientUtils
 
-// Data class for Navigation Steps
+/**
+ * Datenklasse für einzelne Navigationsschritte
+ * Jeder Schritt hat einen beschreibenden Text und ein passendes Icon
+ */
 data class NavigationStepData(val text: String, val icon: Int)
 
+/**
+ * Ein intelligenter Navigation-Drawer im Google Maps Stil.
+ * Zeigt die aktuellen Routenschritte an und kann per Drag vergrößert/verkleinert werden.
+ * Funktioniert wie das bekannte Interface von Google Maps - intuitiv und flüssig.
+ */
 @Composable
 fun NavigationDrawer(
     navigationSteps: List<NavigationStepData>,
@@ -73,17 +48,17 @@ fun NavigationDrawer(
     var isDragging by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
-    // Smooth animation for height changes (Google Maps-like behavior)
+    // Flüssige Höhen-Animation wie bei Google Maps - fühlt sich natürlich an
     val containerHeight by animateDpAsState(
-        targetValue = if (isMaximized) 750.dp else 280.dp, // More space: 750dp maximized, 280dp minimized
+        targetValue = if (isMaximized) 750.dp else 280.dp, // Groß genug für alle Steps
         animationSpec = spring(
-            dampingRatio = 0.8f,
-            stiffness = 500f
+            dampingRatio = 0.8f, // Nicht zu bouncy
+            stiffness = 500f    // Schnell genug für responsive UX
         ),
         label = "ContainerHeight"
     )
 
-    // Subtle zoom effect during drag
+    // Feiner Zoom-Effekt beim Ziehen - gibt haptisches Feedback
     val scale by animateFloatAsState(
         targetValue = if (isDragging) 1.01f else 1f,
         animationSpec = tween(durationMillis = 100),

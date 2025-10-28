@@ -20,8 +20,12 @@ import org.opencv.features2d.DescriptorMatcher
 import org.opencv.imgproc.Imgproc
 
 /**
- * Manages landmark matching, feature extraction, and confidence calculation.
- * Extracted from RouteViewModel for better separation of concerns.
+ * Der Kern der AR-Navigation: Erkennt Landmarks in Kamera-Frames.
+ * 
+ * Verwendet AKAZE-Features für robuste Erkennung und verwaltet einen intelligenten
+ * Cache für bessere Performance. Arbeitet im Hintergrund, um die UI flüssig zu halten.
+ * 
+ * Das ist sozusagen das "Gehirn" der App - es weiß, was in der Kamera zu sehen ist.
  */
 class LandmarkMatchingManager : ViewModel() {
     private companion object {
@@ -61,15 +65,21 @@ class LandmarkMatchingManager : ViewModel() {
     private var frameCounter = 0
     
     /**
-     * Initialize feature detection components
+     * Initialisiert die AKAZE-Feature-Detection.
+     * 
+     * AKAZE ist robust bei verschiedenen Lichtverhältnissen und Blickwinkeln -
+     * perfekt für AR-Navigation in Gebäuden. Der Brute-Force-Matcher ist zwar
+     * langsamer, aber dafür sehr genau.
      */
     fun initializeFeatureDetection() {
         try {
+            // AKAZE mit Standard-Parametern - funktioniert gut für Gebäude-Features
             detector = AKAZE.create()
+            // Brute-Force-Matcher für höchste Genauigkeit
             matcher = DescriptorMatcher.create(DescriptorMatcher.BRUTEFORCE_HAMMING)
-            Log.d(TAG, "Feature detection initialized")
+            Log.d(TAG, "AKAZE-Feature-Detection bereit")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize feature detection", e)
+            Log.e(TAG, "Feature-Detection konnte nicht initialisiert werden", e)
         }
     }
     
@@ -403,6 +413,7 @@ class LandmarkMatchingManager : ViewModel() {
     
     /**
      * Match features between frame and landmark
+     * (Kern-Algorithmus mit Unterstützung von LLM erstellt)
      */
     private fun matchFeatures(frame: LandmarkFeatures, landmark: LandmarkFeatures): LandmarkMatch {
         try {
@@ -431,6 +442,7 @@ class LandmarkMatchingManager : ViewModel() {
             val avgDistance = if (goodMatches > 0) totalDistance / goodMatches else Float.MAX_VALUE
             val minKeypoints = minOf(frame.keypoints.rows(), landmark.keypoints.rows())
             
+            // Komplexe Confidence-Berechnung (mit Unterstützung von LLM erstellt)
             val confidence = if (goodMatches > 0) {
                 when {
                     minKeypoints <= 15 -> (goodMatches.toFloat() / 8f).coerceAtMost(1f)
