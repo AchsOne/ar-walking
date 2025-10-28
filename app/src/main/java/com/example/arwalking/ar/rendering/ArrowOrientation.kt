@@ -21,8 +21,8 @@ object ArrowOrientation {
     private val rotationCache = mutableMapOf<Float, Quaternion>()
     private val blueRotationCache = mutableMapOf<Float, Quaternion>()
 
-    // Pre-computed base rotation for blue arrow
-    private val BLUE_BASE_ROTATION = Quaternion.axisAngle(Vector3(1f, 0f, 0f), -90f)
+    // Pre-computed base rotation for blue arrow - 90° pitch up so it stands vertically
+    private val BLUE_BASE_ROTATION = Quaternion.axisAngle(Vector3(1f, 0f, 0f), 90f)
 
     // Instruction patterns with associated yaw values
     private val INSTRUCTION_PATTERNS = listOf(
@@ -30,6 +30,8 @@ object ArrowOrientation {
         "scharf rechts" to 120f,
         "sharp left" to -120f,
         "sharp right" to 120f,
+        "biegen sie links ab" to -90f,
+        "biegen sie rechts ab" to 90f,
         "links ab" to -90f,
         "rechts ab" to 90f,
         "turn left" to -90f,
@@ -106,6 +108,18 @@ object ArrowOrientation {
             camPos.x + fwd.x * BLUE_DISTANCE_M,
             camPos.y + BLUE_Y_OFFSET_M,
             camPos.z + fwd.z * BLUE_DISTANCE_M
+        )
+    }
+
+    /**
+     * Calculates fixed world position for blue arrow based on anchor position.
+     * Used to place the arrow at a fixed location that doesn't move with device movement.
+     */
+    fun bluePositionFixed(anchorWorldPos: Vector3): Vector3 {
+        return Vector3(
+            anchorWorldPos.x,
+            anchorWorldPos.y + 0.12f, // Fixed height offset above anchor
+            anchorWorldPos.z
         )
     }
 

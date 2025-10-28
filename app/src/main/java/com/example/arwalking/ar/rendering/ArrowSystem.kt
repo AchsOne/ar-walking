@@ -474,23 +474,9 @@ class ArrowRenderer3D(private val context: Context) {
     fun getResetYaw(): Float? = resetYawDeg
 
     fun updateFromPose(scene: Scene, yawDeg: Float) {
-        if (isTurning) {
-            // Blue arrow: keep relative to camera every frame
-            val camera = scene.camera
-            if (camera != null) {
-                val pos = ArrowOrientation.bluePosition(camera)
-                arrowAbbiegen.rootNode.worldPosition = pos
-                arrowAbbiegen.rootNode.worldRotation = ArrowOrientation.blueRotation(yawDeg)
-            }
-        } else {
-            // Green arrow: camera-relative placement and heading every frame
-            val camera = scene.camera
-            if (camera != null) {
-                val pos = ArrowOrientation.greenPosition(camera)
-                arrowRenderer.rootNode.worldPosition = pos
-                arrowRenderer.rootNode.worldRotation = ArrowOrientation.greenRotation(yawDeg)
-            }
-        }
+        // Both arrows (green and blue) stay fixed once placed until next landmark is detected
+        // This prevents arrows from moving with device movement
+        // Position and rotation are set only during placeAnchor() when landmark changes
     }
 
     fun setArrowTypeFromLandmark(landmarkIds: List<String>) {
@@ -586,34 +572,26 @@ class ArrowRenderer3D(private val context: Context) {
             if (arrowAbbiegen.rootNode.parent != anchorNode) {
                 arrowAbbiegen.setParent(anchorNode)
             }
-            // SPECIAL HANDLING FOR BLUE ARROW: centralized position and rotation
+            // BLUE ARROW: Fixed position relative to anchor (not camera-following)
             anchorNode?.let { an ->
-                val scene = an.scene
-                val camera = scene?.camera
-                if (camera != null) {
-                    val arrowPosition = ArrowOrientation.bluePosition(camera)
-                    arrowAbbiegen.rootNode.worldPosition = arrowPosition
-                    arrowAbbiegen.rootNode.worldRotation = ArrowOrientation.blueRotation(yawDeg)
-                    Log.d("ArrowPos", "*** BLUE ARROW SPECIAL *** position=(${"%.2f".format(arrowPosition.x)}, ${"%.2f".format(arrowPosition.y)}, ${"%.2f".format(arrowPosition.z)}), yaw=${"%.1f".format(yawDeg)}°")
-                } else {
-                    // Fallback wenn keine Kamera verfügbar
-                    val wp = an.worldPosition
-                    val worldPos = Vector3(wp.x, wp.y + 0.12f, wp.z)
-                    arrowAbbiegen.setWorldPose(worldPos, yawDeg)
-                    Log.d("ArrowPos", "*** BLUE ARROW FALLBACK *** yaw=${"%.1f".format(yawDeg)}°")
-                }
+                val wp = an.worldPosition
+                val fixedPos = ArrowOrientation.bluePositionFixed(wp)
+                arrowAbbiegen.rootNode.worldPosition = fixedPos
+                arrowAbbiegen.rootNode.worldRotation = ArrowOrientation.blueRotation(yawDeg)
+                Log.d("ArrowPos", "*** BLUE ARROW FIXED *** position=(${"%.2f".format(fixedPos.x)}, ${"%.2f".format(fixedPos.y)}, ${"%.2f".format(fixedPos.z)}), yaw=${"%.1f".format(yawDeg)}°")
             }
             arrowAbbiegen.ensureRenderable()
         } else {
             if (arrowRenderer.rootNode.parent != anchorNode) {
                 arrowRenderer.setParent(anchorNode)
             }
-            // Fixed offset above ground in WORLD space; cancel any parent rotation
+            // GREEN ARROW: Fixed position relative to anchor (not camera-following)
             anchorNode?.let { an ->
                 val wp = an.worldPosition
-                val worldPos = Vector3(wp.x, wp.y + 0.12f, wp.z)
-                arrowRenderer.setWorldPose(worldPos, yawDeg)
-                Log.d("ArrowPos", "ArrowRenderer worldRotation after place: ${arrowRenderer.rootNode.worldRotation}")
+                val fixedPos = Vector3(wp.x, wp.y + 0.12f, wp.z)
+                arrowRenderer.rootNode.worldPosition = fixedPos
+                arrowRenderer.rootNode.worldRotation = ArrowOrientation.greenRotation(yawDeg)
+                Log.d("ArrowPos", "*** GREEN ARROW FIXED *** position=(${"%.2f".format(fixedPos.x)}, ${"%.2f".format(fixedPos.y)}, ${"%.2f".format(fixedPos.z)}), yaw=${"%.1f".format(yawDeg)}°")
             }
             arrowRenderer.ensureRenderable()
         }
