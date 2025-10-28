@@ -220,13 +220,7 @@ private fun NavigationOverlay(
                 .padding(top = 110.dp, end = 16.dp)
         )
 
-      /*  ARInfoIsland(
-            routeViewModel = routeViewModel,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(horizontal = 16.dp)
-                .offset(y = 140.dp)
-        )*/
+        // Scan status will be shown in TopBar center now; remove separate island here
 
         val navigationSteps = currentRoute?.steps?.map { step ->
             val iconRes = when {
@@ -310,20 +304,9 @@ private fun TopBar(
                 .padding(4.dp)
         )
 
-        val currentStepIndex by routeViewModel.currentStep.collectAsState()
-        val currentLandmarkId = currentRoute?.steps?.getOrNull(currentStepIndex)
-            ?.landmarks?.firstOrNull()?.id
-        val displayText = currentLandmarkId ?: destination
-
-        Text(
-            text = displayText,
-            color = Color.White,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            textAlign = TextAlign.Center,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-            lineHeight = 20.sp,
+        // Replace landmark/destination title with AR scan status in center
+        ARInfoIsland(
+            routeViewModel = routeViewModel,
             modifier = Modifier
                 .align(Alignment.Center)
                 .fillMaxWidth(0.7f)
@@ -363,7 +346,7 @@ private fun ARInfoIsland(
         bestConfidence = bestConfidence,
         isTracking = isTracking
     )
-
+/** //Just for debugging
     ExpandedARInfoIsland(
         scanStatus = arStatus,
         landmarkCount = landmarkCount,
@@ -371,6 +354,7 @@ private fun ARInfoIsland(
         modifier = modifier,
         isVisible = isEnabled
     )
+    **/
 }
 
 @Composable

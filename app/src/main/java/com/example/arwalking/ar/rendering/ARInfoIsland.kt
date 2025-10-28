@@ -25,8 +25,8 @@ import kotlinx.coroutines.delay
 import android.util.Log
 
 /**
- * AR Info Island - Semitransparente UI-Komponente im Apple Dynamic Island Style
- * Zeigt Scan-Status und subtile Benutzerführung während der AR-Navigation
+ * AR Info Island - Semitransparente UI-Komponente
+ * Zeigt Scan-Status und hilft bei der AR-Navigation
  */
 @Composable
 fun ARInfoIsland(

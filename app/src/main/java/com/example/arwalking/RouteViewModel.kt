@@ -566,13 +566,15 @@ fun initFeatureMapping(context: Context) {
         if (targetIndex <= current) return // don't jump backwards
         if (targetIndex > current + 2) return // prevent large jumps (possible mismatch)
 
-        // Advance to the matched step
+        // Immediately advance drawer/navigation to the step that owns the detected landmark
         val prev = current
         _currentStep.value = targetIndex
-        _completedSteps.value = _completedSteps.value + (prev until targetIndex).toSet()
+        if (targetIndex > prev) {
+            _completedSteps.value = _completedSteps.value + (prev until targetIndex).toSet()
+        }
         _navigationStatus.value = NavigationStatus.STEP_COMPLETED
         smartStepProgressionManager.onStepAdvanced(targetIndex)
-        Log.d(TAG, "🔀 Aligned to step $targetIndex due to landmark ${best.landmark.id} (${(best.confidence*100).toInt()}%)")
+        Log.d(TAG, "🔀 Drawer advanced to step $targetIndex due to landmark ${best.landmark.id} (${(best.confidence*100).toInt()}%)")
     }
 
     override fun onCleared() {
