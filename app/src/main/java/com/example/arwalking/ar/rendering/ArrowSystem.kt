@@ -17,7 +17,7 @@ data class ArrowConfig(
     // Geometrie des Chevrons
     val limbLength: Float = 0.48f,        // Länge je „Arm"
     val limbRadius: Float = 0.07f,        // Dicke/Radius je „Arm"
-    val chevronAngleDeg: Float = 92f,     // Winkel zwischen den Armen (~90° wie im Bild)
+    val chevronAngleDeg: Float = 92f,     // Winkel zwischen den Armen
 
     // Layer-Offsets (für Outline/Bevel-Optik)
     val layerGapZ: Float = 0.028f,        // Abstand der Layer zueinander
@@ -25,7 +25,7 @@ data class ArrowConfig(
     val backScale: Float = 1.08f,         // Back-Layer minimal größer (weißer Rand)
     val midScale: Float = 1.02f,          // Mid-Layer minimal größer als Top
 
-    // Farben (Lime-Gelbgrün wie im Screenshot)
+    // Farben
     val colBack: Color = Color(0.95f, 0.98f, 0.90f), // fast Weiß für Outline
     val colMid:  Color = Color(0.70f, 0.78f, 0.32f), // etwas dunkler
     val colTop:  Color = Color(0.78f, 0.86f, 0.38f), // heller Vorder-Layer
@@ -51,12 +51,12 @@ data class ArrowAbbiegenConfig(
     val backScale: Float = 1.08f,
     val midScale: Float = 1.02f,
 
-    // Farben (Leuchtendes Cyan/Blau mit Glow)
+    // Farben
     val colBack: Color = Color(0.75f, 0.85f, 0.95f),  // etwas dunklerer Blau-Weiß-Rand
     val colMid:  Color = Color(0.10f, 0.35f, 0.65f),  // dunkleres Cyan-Blau
     val colTop:  Color = Color(0.20f, 0.55f, 0.85f),  // dunkleres helles Blau
 
-    // Glow-Layer (zusätzlicher äußerer Layer für Leuchteffekt)
+    // Glow-Layer
     val glowScale: Float = 1.15f,                      // noch größer als Back-Layer
     val colGlow: Color = Color(0.35f, 0.65f, 0.95f, 0.6f), // dunkleres leuchtendes Blau (gleiche Alpha)
 
@@ -263,8 +263,8 @@ class ArrowAbbiegen(
 ) {
     val rootNode: Node = Node()
     private val geom: Node = Node().apply {
-        // Make blue chevrons upright by rotating local geometry; keep world yaw on root
-        localRotation = Quaternion.axisAngle(Vector3(1f, 0f, 0f), -90f)
+
+        localRotation = Quaternion.axisAngle(Vector3(0f, 0f, 1f), 90f)
     }
     init {
         rootNode.addChild(geom)
@@ -475,9 +475,8 @@ class ArrowRenderer3D(private val context: Context) {
     fun getResetYaw(): Float? = resetYawDeg
 
     fun updateFromPose(scene: Scene, yawDeg: Float) {
-        // Both arrows (green and blue) stay fixed once placed until next landmark is detected
-        // This prevents arrows from moving with device movement
-        // Position and rotation are set only during placeAnchor() when landmark changes
+        // Keep both arrows fixed once placed; do not follow camera motion.
+        // Orientation/position are set only in placeAnchor() on (re)placement.
     }
 
     fun setArrowTypeFromLandmark(landmarkIds: List<String>) {
@@ -573,23 +572,21 @@ class ArrowRenderer3D(private val context: Context) {
             if (arrowAbbiegen.rootNode.parent != anchorNode) {
                 arrowAbbiegen.setParent(anchorNode)
             }
-            // BLUE ARROW: Fixed position relative to anchor (not camera-following)
-            anchorNode?.let { an ->
-                val wp = an.worldPosition
-                val fixedPos = ArrowOrientation.bluePositionFixed(wp)
-                val cam = scene.camera.worldPosition
-                val dx = cam.x - wp.x
-                val dz = cam.z - wp.z
-                val horizLen = kotlin.math.sqrt(dx * dx + dz * dz)
-                val towardCam = 0.5f // move ~0.5m towards camera
-                val mx = if (horizLen > 1e-3f) dx / horizLen * towardCam else 0f
-                val mz = if (horizLen > 1e-3f) dz / horizLen * towardCam else 0f
-                val higherY = 0.20f
-                val nearPos = Vector3(wp.x + mx, wp.y + higherY, wp.z + mz)
-                arrowAbbiegen.rootNode.worldPosition = nearPos
-                arrowAbbiegen.rootNode.worldRotation = ArrowOrientation.blueRotation(yawDeg)
-                Log.d("ArrowPos", "*** BLUE ARROW FIXED *** position=(${"%.2f".format(nearPos.x)}, ${"%.2f".format(nearPos.y)}, ${"%.2f".format(nearPos.z)}), yaw=${"%.1f".format(yawDeg)}° (moved 0.5m towards camera)")
-            }
+            // BLUE ARROW: Fixed placement near user at placement time (eye height), does not follow movement
+            val cam = scene.camera
+            val camPos = cam.worldPosition
+            val fwd = cam.forward
+            val nearDist = 1.8f      // in front of user
+            val eyeOffset = -0.05f   // slightly below eye level
+            val nearPos = Vector3(
+                camPos.x + fwd.x * nearDist,
+                camPos.y + eyeOffset,
+                camPos.z + fwd.z * nearDist
+            )
+            arrowAbbiegen.rootNode.worldPosition = nearPos
+            // Stand upright via geom X-90; apply yaw only around world Y
+            arrowAbbiegen.rootNode.worldRotation = ArrowOrientation.blueRotation(yawDeg)
+            Log.d("ArrowPos", "*** BLUE ARROW FIXED NEAR USER *** position=(${"%.2f".format(nearPos.x)}, ${"%.2f".format(nearPos.y)}, ${"%.2f".format(nearPos.z)}), yaw=${"%.1f".format(yawDeg)}° (fixed)")
             arrowAbbiegen.ensureRenderable()
         } else {
             if (arrowRenderer.rootNode.parent != anchorNode) {
