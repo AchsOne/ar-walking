@@ -263,7 +263,8 @@ class ArrowAbbiegen(
 ) {
     val rootNode: Node = Node()
     private val geom: Node = Node().apply {
-        localRotation = Quaternion.identity()
+        // Make blue chevrons upright by rotating local geometry; keep world yaw on root
+        localRotation = Quaternion.axisAngle(Vector3(1f, 0f, 0f), -90f)
     }
     init {
         rootNode.addChild(geom)
@@ -576,9 +577,18 @@ class ArrowRenderer3D(private val context: Context) {
             anchorNode?.let { an ->
                 val wp = an.worldPosition
                 val fixedPos = ArrowOrientation.bluePositionFixed(wp)
-                arrowAbbiegen.rootNode.worldPosition = fixedPos
+                val cam = scene.camera.worldPosition
+                val dx = cam.x - wp.x
+                val dz = cam.z - wp.z
+                val horizLen = kotlin.math.sqrt(dx * dx + dz * dz)
+                val towardCam = 0.5f // move ~0.5m towards camera
+                val mx = if (horizLen > 1e-3f) dx / horizLen * towardCam else 0f
+                val mz = if (horizLen > 1e-3f) dz / horizLen * towardCam else 0f
+                val higherY = 0.20f
+                val nearPos = Vector3(wp.x + mx, wp.y + higherY, wp.z + mz)
+                arrowAbbiegen.rootNode.worldPosition = nearPos
                 arrowAbbiegen.rootNode.worldRotation = ArrowOrientation.blueRotation(yawDeg)
-                Log.d("ArrowPos", "*** BLUE ARROW FIXED *** position=(${"%.2f".format(fixedPos.x)}, ${"%.2f".format(fixedPos.y)}, ${"%.2f".format(fixedPos.z)}), yaw=${"%.1f".format(yawDeg)}°")
+                Log.d("ArrowPos", "*** BLUE ARROW FIXED *** position=(${"%.2f".format(nearPos.x)}, ${"%.2f".format(nearPos.y)}, ${"%.2f".format(nearPos.z)}), yaw=${"%.1f".format(yawDeg)}° (moved 0.5m towards camera)")
             }
             arrowAbbiegen.ensureRenderable()
         } else {

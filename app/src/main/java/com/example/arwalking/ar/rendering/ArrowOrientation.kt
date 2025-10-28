@@ -9,7 +9,7 @@ import com.google.ar.sceneform.math.Vector3
  */
 object ArrowOrientation {
     // Configuration constants
-    private const val BLUE_DISTANCE_M = 2.0f
+    private const val BLUE_DISTANCE_M = 1.0f
     private const val BLUE_Y_OFFSET_M = -0.5f
     private const val GREEN_DISTANCE_M = 2.0f
     private const val GREEN_Y_OFFSET_M = -0.5f
@@ -21,8 +21,8 @@ object ArrowOrientation {
     private val rotationCache = mutableMapOf<Float, Quaternion>()
     private val blueRotationCache = mutableMapOf<Float, Quaternion>()
 
-    // Pre-computed base rotation for blue arrow - 90° pitch up so it stands vertically
-    private val BLUE_BASE_ROTATION = Quaternion.axisAngle(Vector3(1f, 0f, 0f), 90f)
+    // Pre-computed base rotation for blue arrow - adjust pitch so it stands vertically (upwards)
+    private val BLUE_BASE_ROTATION = Quaternion.axisAngle(Vector3(1f, 0f, 0f), -90f)
 
     // Instruction patterns with associated yaw values
     private val INSTRUCTION_PATTERNS = listOf(
@@ -87,13 +87,13 @@ object ArrowOrientation {
         }
 
     /**
-     * Creates rotation quaternion for blue arrow (standing up, pointing forward).
-     * Combines pitch (-90°) and yaw rotation with caching.
+     * Creates rotation quaternion for blue arrow.
+     * Aligns identically to green (yaw-only) to avoid pitching into ground.
      */
     fun blueRotation(yawDeg: Float): Quaternion =
         blueRotationCache.getOrPut(yawDeg) {
-            val rotY = Quaternion.axisAngle(Vector3(0f, 1f, 0f), yawDeg)
-            Quaternion.multiply(BLUE_BASE_ROTATION, rotY)
+            // Yaw-only; geometry is made upright via local rotation in ArrowAbbiegen
+            Quaternion.axisAngle(Vector3(0f, 1f, 0f), yawDeg)
         }
 
     /**
@@ -118,7 +118,7 @@ object ArrowOrientation {
     fun bluePositionFixed(anchorWorldPos: Vector3): Vector3 {
         return Vector3(
             anchorWorldPos.x,
-            anchorWorldPos.y + 0.12f, // Fixed height offset above anchor
+            anchorWorldPos.y + 0.20f, // Slightly higher for better visibility
             anchorWorldPos.z
         )
     }

@@ -336,7 +336,6 @@ val elapsed = nowMs - lastReliableMatchMs
                 // ========================================
                 val relativeYaw = com.example.arwalking.ar.rendering.ArrowOrientation.calculateYawFromInstruction(instructionForYaw)
 
-                val controllerForYaw = (arSceneView.tag as? ArrowRenderer3D)
                 val dPose = try { frame.camera.displayOrientedPose } catch (_: Exception) { frame.camera.pose }
                 val q = dPose.rotationQuaternion
                 val currentYawDeg = Math.toDegrees(
@@ -345,11 +344,10 @@ val elapsed = nowMs - lastReliableMatchMs
                         1.0 - 2.0 * (q[1] * q[1] + q[2] * q[2])
                     )
                 ).toFloat()
-                val resetYawDeg = controllerForYaw?.ensureResetYaw(currentYawDeg) ?: currentYawDeg
 
-                val rebasedYaw = currentYawDeg - resetYawDeg
-                val targetYaw = rebasedYaw + relativeYaw
-                Log.w("ARCoreArrow", "*** ARROW DIRECTION (calc) *** step=$currentStep, instr='${instructionForYaw}', rebasedYaw=${"%.1f".format(rebasedYaw)}°, relYaw=${"%.1f".format(relativeYaw)}°, targetYaw=${"%.1f".format(targetYaw)}°")
+                // No rebase: directly use current camera yaw plus instruction yaw so device turning cancels out
+                val targetYaw = currentYawDeg + relativeYaw
+                Log.w("ARCoreArrow", "*** ARROW DIRECTION (calc) *** step=$currentStep, instr='${instructionForYaw}', camYaw=${"%.1f".format(currentYawDeg)}°, relYaw=${"%.1f".format(relativeYaw)}°, targetYaw=${"%.1f".format(targetYaw)}°")
 
                 // Persistent Arrow Placement - Anchor bleibt nach erfolgreichem Platzieren bestehen
                 try {
