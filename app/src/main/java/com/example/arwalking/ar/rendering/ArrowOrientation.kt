@@ -92,7 +92,7 @@ object ArrowOrientation {
      */
     fun blueRotation(yawDeg: Float): Quaternion =
         blueRotationCache.getOrPut(yawDeg) {
-            // Yaw-only; geometry is made upright via local rotation in ArrowAbbiegen
+            // Yaw-only around world Y; geometry stays in ground plane
             Quaternion.axisAngle(Vector3(0f, 1f, 0f), yawDeg)
         }
 
