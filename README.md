@@ -11,10 +11,10 @@ Die App verwendet die Kamera, um Navigationsinformationen in der realen Welt zu 
 
 ## 🏗 Architektur
 
-- **Sprache**: Kotlin  
+- **Sprache**: Kotlin, C, C++, Java
 - **Build-System**: Gradle mit Kotlin DSL  
 - **UI**: Jetpack Compose  
-- **AR & CV**: OpenCV für Feature-Matching  
+- **AR & CV**: OpenCV mit Akaze für Feature-Matching  
 
 ## ⚙️ Installation
 
