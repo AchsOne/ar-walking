@@ -1,33 +1,75 @@
-# 🧭 ArWalking
+🧭 ArWalking
 
-Eine Android-App für Augmented Reality Navigation.  
-Die App verwendet die Kamera, um Navigationsinformationen in der realen Welt zu überlagern und Benutzer zu ihrem Ziel zu führen.
+Android‑App für AR‑Navigation per Kamera‑Overlay.  
+Die App erkennt lokale Landmarken in Kamerabildern und blendet darauf basierend Navigationshinweise ein.
 
-## 🚀 Features
+🚀 Features
 
-- AR-basierte Navigation mit Kamera-Overlay
-- Echtzeit-Wegfindung
-- Lokale Landmark-Erkennung
+•  AR‑Overlay (Pfeile/Text) in Jetpack Compose (Canvas)
+•  Landmarken‑Matching mit AKAZE (MLDB) + BFMatcher (Hamming), KNN(2) + Lowe‑Ratio
+•  Schrittfortschaltung entlang einer vorgegebenen Route (offline)
+•  Optionales Info‑Overlay (Keypoints, Match‑Zahlen, Konfidenz, Framezeiten)
 
-## 🏗 Architektur
+🏗 Architektur
 
-- **Sprache**: Kotlin, C, C++, Java
-- **Build-System**: Gradle mit Kotlin DSL  
-- **UI**: Jetpack Compose  
-- **AR & CV**: OpenCV mit Akaze für Feature-Matching  
+•  Sprache: Kotlin (App), Java‑Bindings für OpenCV
+•  Build: Gradle (Kotlin DSL)
+•  UI: Jetpack Compose
+•  CV: OpenCV (AKAZE/MLDB) + BFMatcher (Hamming); kein RANSAC/keine Poseschätzung
+•  Daten: Landmark‑Assets lokal (assets/landmark_images), Route‑JSON lokal; _L/_R‑Varianten für Abbiegungen
+•  Caching: In‑Memory‑Cache der extrahierten Features (nicht der Bilder)
 
-## ⚙️ Installation
+⚙️ Installation
 
-1. Repository klonen  
-2. `./gradlew build`  
-3. `./gradlew installDebug`
+Voraussetzungen
+•  Android Studio (aktuell), Android SDK/Build‑Tools
+•  Testgerät mit Kamera (mind. Android 8.0 empfohlen), Kamera‑Berechtigung
 
-## 🧠 Automatische Verarbeitung
+Schritte
+1. Repository klonen
+2. In Android Studio öffnen, Gradle Sync
+3. App auf ein Gerät installieren (Run/Install Debug)
 
-Die App wird automatisch:
-1. Features aus den Bildern extrahieren
-2. Die Features für schnelles Matching vorverarbeiten
-3. Die Bilder im lokalen Cache speichern
-4. Das Feature-Matching in Echtzeit durchführen
+Alternativ (CLI)
+•  ./gradlew assembleDebug  
+•  ./gradlew installDebug
 
+▶️ Nutzung
 
+•  Route und Landmarken sind lokal eingebunden.
+•  Kamera öffnen, Gerät kurz auf die Landmarke richten; bei bestätigtem Match wird der nächste Schritt ausgelöst und der Overlay‑Pfeil eingeblendet.
+•  Seitliche Landmarken (z. B. Fahrstuhl/Ziel) ggf. aktiv ins Sichtfeld nehmen.
+
+🧠 Wie es funktioniert (Kurz)
+
+1) CameraX liefert Frames  
+2) AKAZE extrahiert Keypoints + MLDB‑Deskriptoren  
+3) Matching gegen gecachte Route‑Landmarken via BFMatcher (Hamming), KNN(2) + Lowe‑Ratio  
+4) Aus Matches werden Match‑Zahl/Confidence berechnet  
+5) Bei Schwellwert‑Erfüllung: Schrittfortschaltung + Overlay‑Update
+
+Stabilisierung: 500 ms Frame‑Intervall, Mindest‑Konfidenz/Mindest‑Matchanzahl.  
+Keine Homographie/RANSAC‑Poseschätzung.
+
+📁 Daten & Assets
+
+•  Route: lokale JSON
+•  Landmarken‑Bilder: assets/landmark_images/<id>.jpg (+ optional <id>_L.jpg / <id>_R.jpg)
+•  Features: Laufzeit‑Extraktion; im Arbeitsspeicher gecached
+
+⚠️ Bekannte Grenzen
+
+•  Keine Poseschätzung: Ausrichtung aus Routen-/Step‑Kontext, nicht aus Homographie
+•  Seitliche/verdeckt liegende Landmarken erfordern aktives Ausrichten der Kamera
+•  Sehr schnelle Bewegung kann das Matching kurzzeitig beeinträchtigen
+•  Landmarken wurden im Prototyp meist aus einer Richtung erfasst
+
+🔒 Datenschutz
+
+•  Vollständig offline: keine Cloud, keine Übertragung.  
+•  Kamerabilder werden nur in‑memory verarbeitet, nicht gespeichert.
+
+📜 Lizenzen
+
+•  OpenCV (BSD‑3‑Clause), AndroidX/Jetpack Compose/Kotlin (Apache‑2.0)  
+•  Lizenzhinweise siehe Third‑Party‑Notices/Lizenzen im Repository
