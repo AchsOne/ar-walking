@@ -55,12 +55,12 @@ import kotlinx.coroutines.launch
  * - Confidence threshold for landmark recognition: 60%
  */
 
-// Confidence-Schwelle für zuverlässige Landmarken-Erkennung
+// Confidence threshold for reliable landmark recognition
 private const val MIN_CONFIDENCE_FOR_ARROW = 0.60f // 60%
-private const val MIN_MATCHES_FOR_ARROW = 3 // Mindestanzahl Feature-Matches
-// Camera-relative Platzierung Konfiguration
-private const val ARROW_DISTANCE_M = 2.5f      // Wie weit vor Kamera
-private const val ARROW_HEIGHT_OFFSET_M = -1.2f // Wie tief unter Kamera
+private const val MIN_MATCHES_FOR_ARROW = 3 // Minimum number of feature matches
+// Camera-relative placement configuration
+private const val ARROW_DISTANCE_M = 2.5f      // How far in front of the camera
+private const val ARROW_HEIGHT_OFFSET_M = -1.2f // How far below the camera
 @Composable
 fun ARCoreArrowView(
     modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
@@ -349,7 +349,7 @@ val elapsed = nowMs - lastReliableMatchMs
                 val targetYaw = currentYawDeg + relativeYaw
                 Log.w("ARCoreArrow", "*** ARROW DIRECTION (calc) *** step=$currentStep, instr='${instructionForYaw}', camYaw=${"%.1f".format(currentYawDeg)}°, relYaw=${"%.1f".format(relativeYaw)}°, targetYaw=${"%.1f".format(targetYaw)}°")
 
-                // Persistent Arrow Placement - Anchor bleibt nach erfolgreichem Platzieren bestehen
+                // Persistent arrow placement — anchor remains after successful placement
                 try {
                     val stepKey = "step_${currentStep}_${instructionForYaw.hashCode()}"
                     val isNewStep = controller.getCurrentStepKey() != stepKey
@@ -371,7 +371,7 @@ val elapsed = nowMs - lastReliableMatchMs
                         val cx = w / 2f
                         val cy = h / 2f
                         val hit = if (isDoorStep) {
-                            // Für Tür-Schritte: strikt mittiger Raycast, damit der Pfeil "gerade auf die Landmarke" zeigt
+                            // For door steps: strictly center raycast so the arrow points "straight at the landmark"
                             performCenterHitTest(frame, cx, cy)
                         } else {
                             performCenterHitTest(frame, cx, cy) ?: performNeighborHitTest(frame, cx, cy, w, h)
@@ -380,7 +380,7 @@ val elapsed = nowMs - lastReliableMatchMs
                             val p = hit.hitPose
                             targetX = p.tx(); targetY = p.ty(); targetZ = p.tz()
                         } else {
-                            // Fallback: vor Kamera, feste Boden-Absenkung
+                            // Fallback: in front of camera with fixed ground offset
                             val forward = floatArrayOf(0f, 0f, -ARROW_DISTANCE_M)
                             val rotated = FloatArray(3)
                             cameraPose.rotateVector(forward, 0, rotated, 0)
@@ -389,7 +389,7 @@ val elapsed = nowMs - lastReliableMatchMs
                             targetZ = cameraPose.tz() + rotated[2]
                         }
 
-                        // Erstelle Anchor an berechneter Position (Identitätsrotation)
+                        // Create anchor at computed position (identity rotation)
                         val targetPose = Pose.makeTranslation(targetX, targetY, targetZ)
                         val anchor = arSceneView.session?.createAnchor(targetPose)
 

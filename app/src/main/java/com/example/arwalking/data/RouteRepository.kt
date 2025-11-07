@@ -10,7 +10,7 @@ class RouteRepository(private val context: Context) {
 
     private val gson = Gson()
 
-    // Lädt eine Route aus den Assets
+    // Loads a route from the assets
     suspend fun getRouteFromAssets(filename: String): RouteData? {
         return withContext(Dispatchers.IO) {
             try {
@@ -22,11 +22,11 @@ class RouteRepository(private val context: Context) {
         }
     }
 
-    // Platz für einen künftigen API-Call
+    // Placeholder for a future API call
     suspend fun getRouteFromApi(startPoint: String, endPoint: String): RouteData? {
         return withContext(Dispatchers.IO) {
             try {
-                // Hier wird später der API-Call implementiert
+                // The API call will be implemented here later
                 // val response = apiService.getRoute(startPoint, endPoint)
                 // gson.fromJson(response, RouteData::class.java)
                 null

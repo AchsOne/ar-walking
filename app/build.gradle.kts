@@ -96,6 +96,9 @@ dependencies {
     // Navigation
     implementation(libs.androidx.navigation.compose)
 
+    // DataStore (persist favorites)
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+
     // Camera (Jetpack CameraX)
     implementation(libs.androidx.camera.core)
     implementation("androidx.camera:camera-camera2:1.2.3")

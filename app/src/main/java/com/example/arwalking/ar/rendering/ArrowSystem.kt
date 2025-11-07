@@ -14,58 +14,58 @@ import com.google.ar.sceneform.rendering.MaterialFactory
 import com.google.ar.sceneform.rendering.ShapeFactory
 
 data class ArrowConfig(
-    // Geometrie des Chevrons
-    val limbLength: Float = 0.48f,        // Länge je „Arm"
-    val limbRadius: Float = 0.07f,        // Dicke/Radius je „Arm"
-    val chevronAngleDeg: Float = 92f,     // Winkel zwischen den Armen
+    // Chevron geometry
+    val limbLength: Float = 0.48f,        // Length per "arm"
+    val limbRadius: Float = 0.07f,        // Thickness/radius per "arm"
+    val chevronAngleDeg: Float = 92f,     // Angle between the arms
 
-    // Layer-Offsets (für Outline/Bevel-Optik)
-    val layerGapZ: Float = 0.028f,        // Abstand der Layer zueinander
-    val layerGapY: Float = -0.006f,       // leicht nach unten versetzen (Schatten)
-    val backScale: Float = 1.08f,         // Back-Layer minimal größer (weißer Rand)
-    val midScale: Float = 1.02f,          // Mid-Layer minimal größer als Top
+    // Layer offsets (for outline/bevel look)
+    val layerGapZ: Float = 0.028f,        // Distance between layers
+    val layerGapY: Float = -0.006f,       // Slightly shifted downward (shadow)
+    val backScale: Float = 1.08f,         // Back layer slightly larger (white rim)
+    val midScale: Float = 1.02f,          // Mid layer slightly larger than top
 
-    // Farben
-    val colBack: Color = Color(0.95f, 0.98f, 0.90f), // fast Weiß für Outline
-    val colMid:  Color = Color(0.70f, 0.78f, 0.32f), // etwas dunkler
-    val colTop:  Color = Color(0.78f, 0.86f, 0.38f), // heller Vorder-Layer
+    // Colors
+    val colBack: Color = Color(0.95f, 0.98f, 0.90f), // almost white for outline
+    val colMid:  Color = Color(0.70f, 0.78f, 0.32f), // slightly darker
+    val colTop:  Color = Color(0.78f, 0.86f, 0.38f), // brighter front layer
 
-    // Stack-Einstellungen (drei Chevrons untereinander)
+    // Stack settings (three chevrons stacked)
     val stackCount: Int = 3,
-    val stackOffset: Vector3 = Vector3(0f, 0f, -0.24f), // Versatz je Chevron in die Tiefe (−Z)
-    val stackDepthStep: Float = -0.01f,                 // leichter Z-Versatz pro Chevron (pseudo Parallax)
+    val stackOffset: Vector3 = Vector3(0f, 0f, -0.24f), // Offset per chevron into depth (−Z)
+    val stackDepthStep: Float = -0.01f,                 // slight Z offset per chevron (pseudo parallax)
 
-    // Gesamtskalierung
+    // Global scaling
     val globalScale: Float = 0.8f
 )
 
 data class ArrowAbbiegenConfig(
-    // Geometrie des Chevrons - identisch zu ArrowConfig
+    // Chevron geometry — identical to ArrowConfig
     val limbLength: Float = 0.48f,
     val limbRadius: Float = 0.07f,
     val chevronAngleDeg: Float = 92f,
 
-    // Layer-Offsets
+    // Layer offsets
     val layerGapZ: Float = 0.028f,
     val layerGapY: Float = -0.006f,
     val backScale: Float = 1.08f,
     val midScale: Float = 1.02f,
 
-    // Farben
-    val colBack: Color = Color(0.75f, 0.85f, 0.95f),  // etwas dunklerer Blau-Weiß-Rand
-    val colMid:  Color = Color(0.10f, 0.35f, 0.65f),  // dunkleres Cyan-Blau
-    val colTop:  Color = Color(0.20f, 0.55f, 0.85f),  // dunkleres helles Blau
+    // Colors
+    val colBack: Color = Color(0.75f, 0.85f, 0.95f),  // slightly darker blue-white rim
+    val colMid:  Color = Color(0.10f, 0.35f, 0.65f),  // darker cyan-blue
+    val colTop:  Color = Color(0.20f, 0.55f, 0.85f),  // darker light blue
 
-    // Glow-Layer
-    val glowScale: Float = 1.15f,                      // noch größer als Back-Layer
-    val colGlow: Color = Color(0.35f, 0.65f, 0.95f, 0.6f), // dunkleres leuchtendes Blau (gleiche Alpha)
+    // Glow layer
+    val glowScale: Float = 1.15f,                      // even larger than back layer
+    val colGlow: Color = Color(0.35f, 0.65f, 0.95f, 0.6f), // darker glowing blue (same alpha)
 
-    // Stack-Einstellungen
+    // Stack settings
     val stackCount: Int = 3,
     val stackOffset: Vector3 = Vector3(0f, 0f, -0.24f),
     val stackDepthStep: Float = -0.01f,
 
-    // Gesamtskalierung
+    // Global scaling
     val globalScale: Float = 0.8f
 )
 
@@ -91,11 +91,11 @@ class ArrowRenderer(
         geom.children.toList().forEach { it.setParent(null) }
     }
 
-    // --- Hilfsfunktion: „Capsule" aus Zylinder + 2 Kugel-Kappen ---
+    // --- Helper: "Capsule" from cylinder + 2 spherical caps ---
     private fun makeCapsule(length: Float, radius: Float, material: com.google.ar.sceneform.rendering.Material): Node {
         val parent = Node()
 
-        // Zylinder (Default-Achse = Y). Wir drehen später alles auf Z + Heading.
+        // Cylinder (default axis = Y). We'll rotate everything to Z + heading later.
         val cyl = ShapeFactory.makeCylinder(radius, length, Vector3(0f, 0f, 0f), material).apply {
             isShadowCaster = false; isShadowReceiver = false
         }
@@ -104,7 +104,7 @@ class ArrowRenderer(
         }
         parent.addChild(cylNode)
 
-        // Kugel-Kappen
+        // Spherical caps
         val cap = ShapeFactory.makeSphere(radius, Vector3(0f, 0f, 0f), material).apply {
             isShadowCaster = false; isShadowReceiver = false
         }
@@ -122,7 +122,7 @@ class ArrowRenderer(
         return parent
     }
 
-    // Ein Layer = zwei Kapseln, zu einem Chevron zusammengesetzt
+    // One layer = two capsules composed into a chevron
     private fun makeChevronLayer(
         length: Float,
         radius: Float,

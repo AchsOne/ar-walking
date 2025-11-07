@@ -98,8 +98,9 @@ fun CameraScreen(
     }
 
     val currentRoute by routeViewModel.currentRoute.collectAsState()
-    val actualStartLocation = currentRoute?.startPoint ?: startLocation
-    val actualDestination = currentRoute?.endPoint ?: destination
+    // Always prefer the user-selected start/destination passed via navigation args
+    val actualStartLocation = startLocation
+    val actualDestination = destination
 
     var hasPermission by remember {
         mutableStateOf(

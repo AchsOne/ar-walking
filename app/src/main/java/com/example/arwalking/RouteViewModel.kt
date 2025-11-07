@@ -24,17 +24,17 @@ import com.example.arwalking.navigation.Vec3
  * Manages route loading, coordinates managers, and maintains state.
  */
 class RouteViewModel : ViewModel() {
-    
+
     /**
      * Filter landmarks for route matching - prioritize Entry over Office normally,
      * but prioritize Office for final destination steps
      */
     private fun filterLandmarksForMatching(landmarks: List<RouteLandmarkData>, isFinalStep: Boolean = false): List<RouteLandmarkData> {
         if (landmarks.size <= 1) return landmarks
-        
+
         val hasEntry = landmarks.any { it.type == "Entry" }
         val hasOffice = landmarks.any { it.type == "Office" }
-        
+
         return when {
             hasEntry && hasOffice -> {
                 if (isFinalStep) {
@@ -52,21 +52,21 @@ class RouteViewModel : ViewModel() {
             else -> landmarks // Keep all other combinations
         }
     }
-    
+
     /**
      * Merge the final two steps into one destination step with combined instruction
      */
     private fun mergeFinalSteps(steps: List<NavigationStep>): List<NavigationStep> {
         if (steps.size < 2) return steps
-        
+
         val regularSteps = steps.dropLast(2)
         val secondLastStep = steps[steps.size - 2]
         val lastStep = steps[steps.size - 1]
-        
+
         // Combine landmarks from both steps, prioritizing Office for final destination
         val allLandmarks = secondLastStep.landmarks + lastStep.landmarks
         val finalLandmarks = filterLandmarksForMatching(allLandmarks, isFinalStep = true)
-        
+
         // Create merged final step
         val mergedFinalStep = NavigationStep(
             stepNumber = regularSteps.size,
@@ -78,13 +78,13 @@ class RouteViewModel : ViewModel() {
             expectedWalkDistance = secondLastStep.expectedWalkDistance + lastStep.expectedWalkDistance,
             estimatedTime = secondLastStep.estimatedTime + lastStep.estimatedTime
         )
-        
+
         Log.d(TAG, "Merged final steps: '${secondLastStep.instruction}' + '${lastStep.instruction}' -> '${mergedFinalStep.instruction}'")
         Log.d(TAG, "Final step landmarks: ${finalLandmarks.map { "${it.id} (${it.type})" }}")
-        
+
         return regularSteps + listOf(mergedFinalStep)
     }
-    
+
     /**
      * Merge office exit steps with immediate turn instructions
      * Skip the "leave office" step and go directly to the turn instruction
@@ -92,11 +92,11 @@ class RouteViewModel : ViewModel() {
     private fun mergeExitWithTurnSteps(steps: List<NavigationStep>): List<NavigationStep> {
         val optimizedSteps = mutableListOf<NavigationStep>()
         var i = 0
-        
+
         while (i < steps.size) {
             val currentStep = steps[i]
             val nextStep = if (i + 1 < steps.size) steps[i + 1] else null
-            
+
             // Check if current step is "leave office" and next step is a turn
             if (isExitOfficeStep(currentStep) && nextStep != null && isTurnStep(nextStep)) {
                 // Create merged step: skip exit, use turn instruction with office landmarks
@@ -110,10 +110,10 @@ class RouteViewModel : ViewModel() {
                     expectedWalkDistance = currentStep.expectedWalkDistance + nextStep.expectedWalkDistance,
                     estimatedTime = currentStep.estimatedTime + nextStep.estimatedTime
                 )
-                
+
                 Log.d(TAG, "Merged exit+turn: '${currentStep.instruction}' + '${nextStep.instruction}' -> '${mergedStep.instruction}'")
                 Log.d(TAG, "Merged step landmarks: ${mergedStep.landmarks.map { "${it.id} (${it.type})" }}")
-                
+
                 optimizedSteps.add(mergedStep)
                 i += 2 // Skip both current and next step
             } else {
@@ -122,48 +122,48 @@ class RouteViewModel : ViewModel() {
                 i++
             }
         }
-        
+
         return optimizedSteps
     }
-    
+
     /**
      * Check if step is an office exit instruction
      */
     private fun isExitOfficeStep(step: NavigationStep): Boolean {
-        return step.instruction.contains("Verlassen Sie das", ignoreCase = true) && 
-               step.instruction.contains("Büro", ignoreCase = true)
+        return step.instruction.contains("Verlassen Sie das", ignoreCase = true) &&
+                step.instruction.contains("Büro", ignoreCase = true)
     }
-    
+
     /**
      * Check if step is a turn instruction
      */
     private fun isTurnStep(step: NavigationStep): Boolean {
-        return step.instruction.contains("Biegen Sie", ignoreCase = true) && 
-               (step.instruction.contains("links", ignoreCase = true) || 
-                step.instruction.contains("rechts", ignoreCase = true))
+        return step.instruction.contains("Biegen Sie", ignoreCase = true) &&
+                (step.instruction.contains("links", ignoreCase = true) ||
+                        step.instruction.contains("rechts", ignoreCase = true))
     }
-    
+
     /**
      * Add synthetic landmarks for turn instructions to bridge the gap
      * between abstract turn commands and concrete landmarks
      */
     private fun addSyntheticTurnLandmarks(steps: List<NavigationStep>): List<NavigationStep> {
         val enhancedSteps = mutableListOf<NavigationStep>()
-        
+
         for (i in steps.indices) {
             val currentStep = steps[i]
             val nextStep = if (i + 1 < steps.size) steps[i + 1] else null
-            
+
             // Check if current step is a turn instruction without landmarks
             if (isTurnStep(currentStep) && currentStep.landmarks.isEmpty() && nextStep != null && nextStep.landmarks.isNotEmpty()) {
                 // Get the first landmark from the next step
                 val nextLandmark = nextStep.landmarks.first()
                 val turnDirection = getTurnDirection(currentStep.instruction)
-                
+
                 if (turnDirection != null) {
                     // Create synthetic landmark ID
                     val syntheticLandmarkId = "${nextLandmark.id}_${turnDirection}"
-                    
+
                     // Create synthetic landmark data
                     val syntheticLandmark = RouteLandmarkData(
                         id = syntheticLandmarkId,
@@ -172,12 +172,12 @@ class RouteViewModel : ViewModel() {
                         y = nextLandmark.y,
                         type = "TurnReference"
                     )
-                    
+
                     // Add enhanced step with synthetic landmark
                     val enhancedStep = currentStep.copy(
                         landmarks = listOf(syntheticLandmark)
                     )
-                    
+
                     Log.d(TAG, "Added synthetic landmark '${syntheticLandmarkId}' for turn instruction: '${currentStep.instruction}'")
                     enhancedSteps.add(enhancedStep)
                 } else {
@@ -187,10 +187,10 @@ class RouteViewModel : ViewModel() {
                 enhancedSteps.add(currentStep)
             }
         }
-        
+
         return enhancedSteps
     }
-    
+
     /**
      * Extract turn direction from instruction text
      */
@@ -209,7 +209,7 @@ class RouteViewModel : ViewModel() {
     private val positionTrackingManager = PositionTrackingManager()
     private val landmarkMatchingManager = LandmarkMatchingManager()
     private val smartStepProgressionManager = SmartStepProgressionManager()
-    
+
     // Route state
     private val _currentRoute = MutableStateFlow<NavigationRoute?>(null)
     val currentRoute: StateFlow<NavigationRoute?> = _currentRoute.asStateFlow()
@@ -222,32 +222,32 @@ class RouteViewModel : ViewModel() {
 
     private val _routePath = MutableStateFlow<RoutePath?>(null)
     val routePath: StateFlow<RoutePath?> = _routePath.asStateFlow()
-    
+
     private var routeBuilder: RouteBuilder = RouteBuilderImpl()
     private var session: Session? = null
 
     // State flows managed directly for compatibility
     private val _completedSteps = MutableStateFlow<Set<Int>>(emptySet())
     val completedSteps: StateFlow<Set<Int>> = _completedSteps.asStateFlow()
-    
+
     private val _navigationStatus = MutableStateFlow(NavigationStatus.WAITING)
     val navigationStatus: StateFlow<NavigationStatus> = _navigationStatus.asStateFlow()
-    
+
     private val _currentMatches = MutableStateFlow<List<LandmarkMatch>>(emptyList())
     val currentMatches: StateFlow<List<LandmarkMatch>> = _currentMatches.asStateFlow()
-    
+
     private val _isProcessing = MutableStateFlow(false)
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
-    
+
     private val _featureMappingEnabled = MutableStateFlow(false)
     val featureMappingEnabled: StateFlow<Boolean> = _featureMappingEnabled.asStateFlow()
-    
+
     private val _arrowState = MutableStateFlow(ArrowController.ArrowState())
     val arrowState: StateFlow<ArrowController.ArrowState> = _arrowState.asStateFlow()
-    
+
     private val _userProgress = MutableStateFlow(0f)
     val userProgress: StateFlow<Float> = _userProgress.asStateFlow()
-    
+
     private val _distanceToNext = MutableStateFlow(Float.MAX_VALUE)
     val distanceToNext: StateFlow<Float> = _distanceToNext.asStateFlow()
 
@@ -274,15 +274,15 @@ class RouteViewModel : ViewModel() {
             val pathItem = routeData.route.path[0]
             val rawSteps = pathItem.routeParts.mapIndexed { index, part ->
                 // Calculate expected walking distance from edge lengths
-                val walkDistance = part.nodes?.sumOf { nodeWrapper -> 
-                    nodeWrapper.edge?.lengthInMeters?.toDoubleOrNull() ?: 0.0 
+                val walkDistance = part.nodes?.sumOf { nodeWrapper ->
+                    nodeWrapper.edge?.lengthInMeters?.toDoubleOrNull() ?: 0.0
                 } ?: 0.0
-                
+
                 // Filter landmarks: prefer Entry over Office when both are present (except for final step)
                 val filteredLandmarks = filterLandmarksForMatching(part.landmarks, isFinalStep = false)
-                
+
                 Log.d(TAG, "Step $index: ${part.instructionDe} - Expected distance: ${"%.2f".format(walkDistance)}m (${part.landmarks.size} landmarks -> ${filteredLandmarks.size} filtered)")
-                
+
                 NavigationStep(
                     stepNumber = index,
                     instruction = part.instructionDe,
@@ -294,7 +294,7 @@ class RouteViewModel : ViewModel() {
                     estimatedTime = part.duration ?: 0
                 )
             }
-            
+
             // Apply step optimizations
             val optimizedSteps = mergeExitWithTurnSteps(rawSteps)
             val stepsWithSyntheticLandmarks = addSyntheticTurnLandmarks(optimizedSteps)
@@ -321,14 +321,14 @@ class RouteViewModel : ViewModel() {
             )
 
             _currentRoute.value = route
-            
+
             // Reset to step 0 when loading new route
             _currentStep.value = 0
             _completedSteps.value = emptySet()
             _navigationStatus.value = NavigationStatus.WAITING
             smartStepProgressionManager.reset()
             Log.d(TAG, "Route state reset: currentStep=0, completedSteps=[], status=WAITING")
-            
+
             // Build navigation route path and initialize position tracking
             val routePath = routeBuilder.buildFromJson(routeData)
             if (routePath != null) {
@@ -340,14 +340,14 @@ class RouteViewModel : ViewModel() {
             } else {
                 Log.w(TAG, "Failed to build navigation route path")
             }
-            
+
             // Initialize landmark matching with route context
             landmarkMatchingManager.initializeFeatureDetection()
             // Pre-load landmark features for the route
             viewModelScope.launch {
                 landmarkMatchingManager.preloadLandmarkFeatures(route, context)
             }
-            
+
             Log.d(TAG, "Route loaded: ${steps.size} steps, ${route.totalLength}m")
             route
         } catch (e: Exception) {
@@ -370,9 +370,9 @@ class RouteViewModel : ViewModel() {
      */
     suspend fun processFrame(bitmap: Bitmap, context: Context) {
         if (!_featureMappingEnabled.value) return
-        
+
         _isProcessing.value = true
-        
+
         try {
             // Basic landmark matching using manager
             landmarkMatchingManager.processFrame(
@@ -385,13 +385,13 @@ class RouteViewModel : ViewModel() {
                         LandmarkMatch(match.landmark, match.matchCount, match.confidence, match.distance)
                     }
                     _currentMatches.value = convertedMatches
-                    
+
                     // Try to align current step to matched landmark if within a small window (<= 2 steps ahead)
                     tryAlignStepToMatchedLandmark(convertedMatches)
-                    
+
                     // Smart step progression with landmark + distance tracking
                     // This will be called from updatePosition with actual ARCore position
-                    
+
                     // Debug: Log matches
                     if (convertedMatches.isNotEmpty()) {
                         val best = convertedMatches.maxByOrNull { it.confidence }!!
@@ -411,7 +411,7 @@ class RouteViewModel : ViewModel() {
      */
     suspend fun updatePosition(frame: Frame) {
         try {
-            // Schrittbasierter Fallback für RemainingDistance deaktiviert
+            // step based fallback RemainingDistance deactivated
             val currentRouteVal = _currentRoute.value
             val stepIdx = _currentStep.value
             // val fallbackRemaining: Float? = if (currentRouteVal != null && stepIdx < currentRouteVal.steps.size) {
@@ -429,26 +429,26 @@ class RouteViewModel : ViewModel() {
                 measuredSpeedMps = 1.0f,
                 fallbackRemainingDistanceMeters = null
             )
-            
+
             // Sync state from position manager
             _userProgress.value = positionTrackingManager.getCurrentProgress()
-            
+
             // Smart step progression using ARCore position
             val cameraPose = frame.camera.pose
             val currentPosition = Vec3(
                 cameraPose.translation[0],
-                cameraPose.translation[1], 
+                cameraPose.translation[1],
                 cameraPose.translation[2]
             )
             
-            // Auto-Advance reaktiviert: aber nur bei Landmark-Erkennung wird weitergeschaltet
+            // Auto-Advance reaktiviert: aber nur bei erfolgreiocher Landmark-Erkennung wird weitergeschaltet
             val progressionResult = smartStepProgressionManager.analyzeStepProgression(
                 currentStep = _currentStep.value,
                 currentRoute = _currentRoute.value,
                 landmarkMatches = _currentMatches.value,
                 currentPosition = currentPosition
             )
-            
+
             when (progressionResult) {
                 is ProgressionResult.AdvanceToStep -> {
                     val isLandmarkBased = progressionResult.reason.contains("Landmark", ignoreCase = true)
@@ -458,9 +458,9 @@ class RouteViewModel : ViewModel() {
                         _completedSteps.value = _completedSteps.value + currentStep
                         _navigationStatus.value = NavigationStatus.STEP_COMPLETED
                         smartStepProgressionManager.onStepAdvanced(progressionResult.newStep)
-                        
+
                         Log.d(TAG, "✅ Step advanced (landmark): $currentStep -> ${progressionResult.newStep} (${progressionResult.reason})")
-                        
+
                         // Log distance stats
                         val stats = smartStepProgressionManager.getDistanceStats()
                         Log.d(TAG, "📊 Distance stats: step=${String.format("%.2f", stats.currentStepDistance)}m, total=${String.format("%.2f", stats.totalDistance)}m")
@@ -470,7 +470,7 @@ class RouteViewModel : ViewModel() {
                 }
                 is ProgressionResult.NoAdvance -> {
                     Log.v(TAG, "🔄 No advance: ${progressionResult.reason}")
-                    
+
                     // Log current step progress
                     val currentRoute = _currentRoute.value
                     val currentStep = _currentStep.value
@@ -482,20 +482,20 @@ class RouteViewModel : ViewModel() {
                     }
                 }
             }
-            
+
         } catch (e: Exception) {
             Log.w(TAG, "Position update failed", e)
         }
     }
 
     /**
-     * Skip current step (for testing/debugging)
+     * Skip current step
      */
     fun skipStep() {
         val currentRoute = _currentRoute.value ?: return
         val currentStep = _currentStep.value
         val nextStep = currentStep + 1
-        
+
         if (nextStep < currentRoute.steps.size) {
             _currentStep.value = nextStep
             _completedSteps.value = _completedSteps.value + currentStep
@@ -505,25 +505,18 @@ class RouteViewModel : ViewModel() {
     }
 
     /**
-     * Start processing (for compatibility)
-     */
-    fun startProcessing() {
-        Log.d(TAG, "Frame processing started")
-    }
-    
-    /**
      * Log route information (for compatibility)
      */
     fun logRoute(route: NavigationRoute) {
         Log.d(TAG, "Route loaded: ${route.name} with ${route.steps.size} steps")
     }
-    
+
     /**
      * Initialize feature mapping (for compatibility)
      */
-fun initFeatureMapping(context: Context) {
+    fun initFeatureMapping(context: Context) {
         setFeatureMappingEnabled(true)
-        
+
         // Pre-load landmark features if route is available
         val route = _currentRoute.value
         if (route != null) {
@@ -531,8 +524,17 @@ fun initFeatureMapping(context: Context) {
                 landmarkMatchingManager.preloadLandmarkFeatures(route, context)
             }
         }
-        
+
         Log.d(TAG, "Feature mapping initialized")
+    }
+
+    /**
+     * Start processing pipeline (compatibility shim)
+     * Currently ensures feature mapping is enabled; ARCore view feeds frames.
+     */
+    fun startProcessing() {
+        setFeatureMappingEnabled(true)
+        Log.d(TAG, "Processing started (feature mapping enabled)")
     }
 
     private fun extractLocation(instruction: String, isStart: Boolean): String {
@@ -579,7 +581,7 @@ fun initFeatureMapping(context: Context) {
 
     override fun onCleared() {
         super.onCleared()
-        
+
         // Clean up managers
         try {
             positionTrackingManager.cleanup()
@@ -587,17 +589,10 @@ fun initFeatureMapping(context: Context) {
         } catch (e: Exception) {
             Log.w(TAG, "Manager cleanup failed", e)
         }
-        
+
         session = null
         Log.d(TAG, "RouteViewModel cleared")
     }
-
-    // Legacy data classes for compatibility (should eventually be moved to shared package)
-    data class LandmarkFeatures(
-        val id: String,
-        val keypoints: org.opencv.core.MatOfKeyPoint,
-        val descriptors: org.opencv.core.Mat
-    )
 
     data class LandmarkMatch(
         val landmark: RouteLandmarkData,
@@ -606,25 +601,8 @@ fun initFeatureMapping(context: Context) {
         val distance: Float
     )
 
-    data class DetectionHistory(
-        val landmarkId: String,
-        val stepNumber: Int,
-        var firstDetectionTime: Long = 0L,
-        var lastDetectionTime: Long = 0L,
-        var highestConfidence: Float = 0f,
-        var isStable: Boolean = false
-    )
-    
-    data class SmartStartResult(
-        val targetStep: Int,
-        val match: LandmarkMatch
-    )
-
     enum class NavigationStatus {
         WAITING,
-        TRACKING,
         STEP_COMPLETED,
-        LOST_TRACKING,
-        ROUTE_COMPLETED
     }
 }

@@ -3,7 +3,7 @@ package com.example.arwalking.data
 import com.example.arwalking.FeatureLandmark
 
 /**
- * Datenstrukturen für die Organisation von Landmarks nach Gebäuden und Stockwerken
+ * Data structures for organizing landmarks by buildings and floors
  */
 
 data class BuildingFolder(
@@ -24,7 +24,7 @@ data class FloorFolder(
 )
 
 /**
- * Vordefinierte Gebäudestruktur der Universität Regensburg
+ * Predefined building structure of the University of Regensburg
  */
 object UniversityBuildings {
     
@@ -188,7 +188,7 @@ object UniversityBuildings {
     }
     
     /**
-     * Ordnet ein Landmark basierend auf seiner Position einem Gebäude/Stockwerk zu
+     * Assigns a landmark to a building/floor based on its position
      */
     fun assignLandmarkToBuilding(landmark: FeatureLandmark): Pair<String, Int>? {
         val building = landmark.position.building
@@ -197,7 +197,7 @@ object UniversityBuildings {
         return if (building != null && floor != null) {
             Pair(building, floor)
         } else {
-            // Fallback: Versuche aus dem Namen zu extrahieren
+            // Fallback: try to extract from the name
             extractBuildingFromName(landmark.name)
         }
     }

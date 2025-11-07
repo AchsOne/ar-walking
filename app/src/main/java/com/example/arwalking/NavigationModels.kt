@@ -24,8 +24,4 @@ data class NavigationStep(
     val distance: Double = 0.0,
     val expectedWalkDistance: Double = 0.0, // NEU: aus lengthInMeters der JSON edges
     val estimatedTime: Int = 0
-) {
-    // Computed property to get landmark IDs from landmarks
-    val computedLandmarkIds: List<String>
-        get() = if (landmarkIds.isNotEmpty()) landmarkIds else landmarks.map { it.id }
-}
+)

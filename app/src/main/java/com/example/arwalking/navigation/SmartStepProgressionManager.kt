@@ -12,9 +12,9 @@ class SmartStepProgressionManager {
     companion object {
         private const val TAG = "SmartStepProgressionManager"
         private const val LANDMARK_CONFIDENCE_THRESHOLD = 0.6f
-        private const val DISTANCE_TOLERANCE_SMALL_STEP = 90f  // 90% für Schritte < 2m
-        private const val DISTANCE_TOLERANCE_MEDIUM_STEP = 80f // 80% für Schritte 2-5m  
-        private const val DISTANCE_TOLERANCE_LARGE_STEP = 70f  // 70% für Schritte > 5m
+        private const val DISTANCE_TOLERANCE_SMALL_STEP = 90f  // 90% for steps < 2m
+        private const val DISTANCE_TOLERANCE_MEDIUM_STEP = 80f // 80% for steps 2-5m  
+        private const val DISTANCE_TOLERANCE_LARGE_STEP = 70f  // 70% for steps > 5m
     }
     
     private val distanceTracker = DistanceTracker()
@@ -129,7 +129,7 @@ class SmartStepProgressionManager {
     
     /**
      * Either landmark detection or distance threshold works
-     * (Komplexe Logik mit Unterstützung von LLM erstellt)
+     * (Complex logic created with assistance from an LLM)
      */
     private fun analyzeLandmarkOrDistance(
         currentStep: Int,
@@ -199,7 +199,7 @@ class SmartStepProgressionManager {
     
     /**
      * Complex hybrid logic for special cases
-     * (Mit Unterstützung von LLM erstellt)
+     * (Created with assistance from an LLM)
      */
     private fun analyzeHybrid(
         currentStep: Int,
@@ -216,9 +216,9 @@ class SmartStepProgressionManager {
      */
     private fun getDistanceTolerance(expectedDistance: Double): Float {
         return when {
-            expectedDistance < 2.0 -> DISTANCE_TOLERANCE_SMALL_STEP   // 90% für kurze Schritte
-            expectedDistance < 5.0 -> DISTANCE_TOLERANCE_MEDIUM_STEP  // 80% für mittlere Schritte
-            else -> DISTANCE_TOLERANCE_LARGE_STEP                     // 70% für lange Schritte
+            expectedDistance < 2.0 -> DISTANCE_TOLERANCE_SMALL_STEP   // 90% for short steps
+            expectedDistance < 5.0 -> DISTANCE_TOLERANCE_MEDIUM_STEP  // 80% for medium steps
+            else -> DISTANCE_TOLERANCE_LARGE_STEP                     // 70% for long steps
         }
     }
 

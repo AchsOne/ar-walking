@@ -24,35 +24,21 @@ import org.opencv.android.OpenCVLoader
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 
-/**
- * Das Herz der AR-Walking App.
- * 
- * Hier wird alles initialisiert: OpenCV für Computer Vision,
- * das RouteViewModel für Navigation und die gesamte UI.
- * 
- * Denk an MainActivity als den "Dirigenten" der App - koordiniert alle Komponenten.
- */
 class MainActivity : ComponentActivity() {
 
     private lateinit var routeViewModel: RouteViewModel
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Schritt 1: Computer Vision vorbereiten - ohne OpenCV läuft nichts
+        // Initialize favorites persistence early
+        com.example.arwalking.data.FavoritesRepository.initialize(applicationContext)
         initOpenCV()
-        // Schritt 2: Das Gehirn der Navigation aktivieren
         setupViewModel()
-        // Schritt 3: Die schöne UI aufbauen
         setupUI()
-        // Schritt 4: Route laden und Feature-Mapping starten
         loadRoute()
     }
 
-    /**
-     * OpenCV ist unser Computer-Vision-Motor.
-     * Ohne OpenCV können wir keine Features in Bildern erkennen - also absolut kritisch!
-     */
+
     private fun initOpenCV() {
         if (!OpenCVLoader.initLocal()) {
             Log.e(TAG, "OpenCV konnte nicht geladen werden - AR-Navigation nicht möglich!")
@@ -61,10 +47,7 @@ class MainActivity : ComponentActivity() {
         Log.d(TAG, "OpenCV erfolgreich geladen - Computer Vision bereit")
     }
 
-    /**
-     * Das RouteViewModel ist das Gehirn der Navigation.
-     * Es weiß wo wir sind, wo wir hinwollen und was um uns herum ist.
-     */
+
     private fun setupViewModel() {
         routeViewModel = ViewModelProvider(this)[RouteViewModel::class.java]
     }
@@ -84,10 +67,7 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Lädt die Navigationsroute und startet das Feature-Mapping.
-     * 
-     * Das ist der Moment wo die App "lernt" wie die Landmarks aussehen,
-     * damit sie später in der Kamera erkannt werden können.
+     * Loads the navigation route and starts feature mapping.
      */
     private fun loadRoute() {
         val route = routeViewModel.loadRoute(this) ?: run {
@@ -95,9 +75,9 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        // Debug-Info für Entwickler
+        // Debug-Info
         routeViewModel.logRoute(route)
-        // Jetzt die Landmarks "lernen" - Feature-Extraktion starten
+        // "learn" landmarks- start feature extraction
         routeViewModel.initFeatureMapping(this)
     }
 

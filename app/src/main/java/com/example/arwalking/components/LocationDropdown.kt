@@ -39,9 +39,9 @@ import androidx.compose.ui.window.PopupProperties
 import com.example.arwalking.R
 
 /**
- * Ein elegantes Dropdown für Locationauswahl mit intelligenter Suche.
- * Unterstützt Fuzzy-Search und verschiedene Matching-Strategien,
- * damit Benutzer schnell finden was sie suchen - auch mit Tippfehlern.
+ * An elegant dropdown for location selection with intelligent search.
+ * Supports fuzzy search and various matching strategies,
+ * so users can quickly find what they’re looking for—even with typos.
  */
 @RequiresApi(Build.VERSION_CODES.S)
 @Composable
@@ -63,15 +63,15 @@ fun LocationDropdown(
     val focusRequester = remember { FocusRequester() }
     var searchText by remember { androidx.compose.runtime.mutableStateOf("") }
 
-    // Intelligente Fuzzy-Suche: Findet auch Begriffe mit kleinen Tippfehlern
-    // Zum Beispiel: "Cafetria" findet trotzdem "Cafeteria"
-    // (Mit Unterstützung von LLM erstellt)
+    // Intelligent fuzzy search: also finds terms with small typos
+    // For example: "Cafetria" will still find "Cafeteria"
+    // (Created with assistance from an LLM)
     fun fuzzyMatch(text: String, query: String): Boolean {
-        if (query.length < 2) return false // Zu kurze Suchen sind nicht sinnvoll
+        if (query.length < 2) return false // Searches that are too short are not useful
         var textIndex = 0
         var queryIndex = 0
         var mismatches = 0
-        val maxMismatches = 1 // Großzügig: Ein Tippfehler ist okay
+        val maxMismatches = 1 // Generous: one typo is okay
 
         while (textIndex < text.length && queryIndex < query.length) {
             if (text[textIndex] == query[queryIndex]) {
@@ -86,9 +86,9 @@ fun LocationDropdown(
         return queryIndex >= query.length - maxMismatches
     }
 
-    // Mehrstufiger Such-Algorithmus: Von exakt bis flexibel
-    // Je mehr Treffer, desto besser für den Benutzer
-    // (Mit Unterstützung von LLM erstellt)
+    // Multi-stage search algorithm: from exact to flexible
+    // The more hits, the better for the user
+    // (Created with assistance from an LLM)
     val filteredOptions = if (searchText.isEmpty()) {
         options // Keine Suche = alle Optionen anzeigen
     } else {
@@ -96,39 +96,39 @@ fun LocationDropdown(
         options.filter { option ->
             val optionLower = option.lowercase()
 
-            // Strategie 1: Direkter Treffer ("Office" findet "Office Prof.")
+            // Strategy 1: Direct hit ("Office" finds "Office Prof.")
             optionLower.contains(searchQuery) ||
 
-            // Strategie 2: Wort-Anfang-Matching ("Prof" findet "Office Prof. Dr.")
+            // Strategy 2: Word-start matching ("Prof" finds "Office Prof. Dr.")
             option.split(" ", "(", ")", ".", "-").any { word ->
                 word.lowercase().startsWith(searchQuery)
             } ||
 
-            // Strategie 3: Akronym-Suche ("odl" findet "Office Dr. Ludwig")
+            // Strategy 3: Acronym search ("odl" finds "Office Dr. Ludwig")
             option.split(" ", "(", ")", ".", "-")
                 .mapNotNull { it.firstOrNull()?.lowercase() }
                 .joinToString("")
                 .contains(searchQuery) ||
 
-            // Strategie 4: Fuzzy-Match für Tippfehler
+            // Strategy 4: Fuzzy match for typos
             fuzzyMatch(optionLower, searchQuery)
         }.sortedWith(compareBy<String> { option ->
             val optionLower = option.lowercase()
             when {
-                // Priorität 1: Beginnt mit Suchbegriff
+                // Priority 1: Starts with search term
                 optionLower.startsWith(searchQuery) -> 0
-                // Priorität 2: Enthält Suchbegriff am Wortanfang
+                // Priority 2: Contains search term at the beginning of a word
                 option.split(" ").any { it.lowercase().startsWith(searchQuery) } -> 1
-                // Priorität 3: Enthält Suchbegriff irgendwo
+                // Priority 3: Contains search term somewhere
                 optionLower.contains(searchQuery) -> 2
-                // Priorität 4: Andere Matches
+                // Priority 4: Other matches
                 else -> 3
             }
-        }.thenBy { it.length }) // Bei gleicher Priorität: kürzere Optionen zuerst
+        }.thenBy { it.length }) // With the same priority: shorter options first
     }
 
-    // Hilfsfunktion für Hervorhebung des Suchtexts
-    // (Mit Unterstützung von LLM erstellt)
+    // Helper for highlighting the search text
+    // (Created with assistance from an LLM)
     fun highlightSearchText(text: String, searchQuery: String): AnnotatedString {
         if (searchQuery.isEmpty()) {
             return AnnotatedString(text)
@@ -142,10 +142,10 @@ fun LocationDropdown(
             var index = textLower.indexOf(searchQueryLower)
 
             while (index != -1) {
-                // Text vor dem Match
+                // Text before the match
                 append(text.substring(lastIndex, index))
 
-                // Hervorgehobener Match
+                // Highlighted match
                 withStyle(style = SpanStyle(
                     color = Color(0xFF007AFF), // Apple Blue
                     fontWeight = FontWeight.SemiBold
@@ -157,23 +157,23 @@ fun LocationDropdown(
                 index = textLower.indexOf(searchQueryLower, lastIndex)
             }
 
-            // Restlicher Text
+            // Remaining text
             append(text.substring(lastIndex))
         }
     }
 
-    // Dropdown-Dimensionen
+    // Dropdown dimensions
     val dropdownMinHeight = 120.dp
-    val dropdownMaxHeight = 250.dp // Reduziert von 300.dp auf 200.dp
+    val dropdownMaxHeight = 250.dp // Reduced from 300.dp to 200.dp
     val scrollStateDropdown = rememberScrollState()
 
     // Reset searchText when dropdown is closed and focus when opened
     androidx.compose.runtime.LaunchedEffect(isExpanded) {
         if (!isExpanded) {
-            searchText = "" // Suchtext zurücksetzen beim Schließen
-            focusManager.clearFocus() // Fokus entfernen und Tastatur schließen
+            searchText = "" // Reset search text when closing
+            focusManager.clearFocus() // Remove focus and close keyboard
         } else {
-            // Fokussiere das TextField und öffne die Tastatur
+            // Focus the text field and open the keyboard
             focusRequester.requestFocus()
         }
     }
@@ -191,10 +191,10 @@ fun LocationDropdown(
     val dropdownHeight = remember { Animatable(0f) }
     val calculatedHeight = with(density) {
         val contentHeight = if (filteredOptions.isEmpty()) {
-            // Minimale Höhe für "Keine Ergebnisse" Text (Apple-Stil)
+            // Minimum height for "No results" text (Apple style)
             64.dp
         } else {
-            (filteredOptions.size * 44 + 8).dp // Apple-typische Item-Höhe
+            (filteredOptions.size * 44 + 8).dp // Apple-typical item height
         }
         contentHeight.coerceIn(dropdownMinHeight, dropdownMaxHeight).toPx()
     }
@@ -416,11 +416,11 @@ fun LocationDropdown(
             if (dropdownHeight.value > 0f) {
                 val yOffset = with(density) {
                     if (expandUpward) {
-                        // Nach oben expandieren - Dropdown oberhalb des Eingabefelds
+                        // Expand upward — dropdown above the input field
                         val dropdownHeightPx = calculatedHeight
                         -(dropdownHeightPx + dropdownOffset.toPx()).toInt()
                     } else {
-                        // Nach unten expandieren (Standard)
+                        // Expand downward (default)
                         (50.dp + dropdownOffset).roundToPx()
                     }
                 }

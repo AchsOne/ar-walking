@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Analysiert die Landmark-Bilder und simuliert Feature-Extraktion
+    !HINWEIS!: Dieses Skript ist optional und dient nur zur Entwicklungsanalyse/Testzwecke.
 """
 
 import os
@@ -35,8 +36,8 @@ def analyze_landmark_images():
     print("\n🎯 ERWARTETE FEATURE-EXTRAKTION")
     print("=" * 50)
     
-    expected_features_per_image = 1500  # Unsere ORB-Einstellung
-    min_matches_needed = 20  # Unser Threshold
+    expected_features_per_image = 1500
+    min_matches_needed = 20
     
     for img_path in sorted(image_files):
         filename = os.path.basename(img_path)
@@ -89,6 +90,8 @@ def analyze_landmark_images():
     return coverage >= 60
 
 if __name__ == "__main__":
+
+
     success = analyze_landmark_images()
     
     print(f"\n{'='*50}")
@@ -98,3 +101,6 @@ if __name__ == "__main__":
     else:
         print("❌ FAZIT: Probleme beim Feature-Matching zu erwarten!")
         print("💡 TIPP: Mehr/bessere Landmark-Bilder hinzufügen")
+    
+    print(f"\n⚠️ HINWEIS: Dieses Skript ist ein Development-Tool und wird von der App nicht ausgeführt.")
+    print(f"   Die tatsächliche Feature-Extraktion erfolgt in LandmarkMatchingManager.kt mit AKAZE.")

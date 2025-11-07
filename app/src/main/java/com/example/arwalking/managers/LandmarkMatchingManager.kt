@@ -20,12 +20,7 @@ import org.opencv.features2d.DescriptorMatcher
 import org.opencv.imgproc.Imgproc
 
 /**
- * Der Kern der AR-Navigation: Erkennt Landmarks in Kamera-Frames.
- * 
- * Verwendet AKAZE-Features für robuste Erkennung und verwaltet einen intelligenten
- * Cache für bessere Performance. Arbeitet im Hintergrund, um die UI flüssig zu halten.
- * 
- * Das ist sozusagen das "Gehirn" der App - es weiß, was in der Kamera zu sehen ist.
+ * Detects landmarks in camera frames
  */
 class LandmarkMatchingManager : ViewModel() {
     private companion object {
@@ -36,53 +31,49 @@ class LandmarkMatchingManager : ViewModel() {
         private const val MIN_CONFIDENCE = 0.30f
         private const val RATIO_THRESHOLD = 0.75f
     }
-    
+
     // Feature matching state
     private val _currentMatches = MutableStateFlow<List<LandmarkMatch>>(emptyList())
     val currentMatches: StateFlow<List<LandmarkMatch>> = _currentMatches.asStateFlow()
-    
+
     private val _isProcessing = MutableStateFlow(false)
     val isProcessing: StateFlow<Boolean> = _isProcessing.asStateFlow()
-    
+
     private val _featureMappingEnabled = MutableStateFlow(false)
     val featureMappingEnabled: StateFlow<Boolean> = _featureMappingEnabled.asStateFlow()
-    
+
     // Feature detection components
     private var detector: AKAZE? = null
     private var matcher: DescriptorMatcher? = null
     private val featuresCache = mutableMapOf<String, LandmarkFeatures>()
     private val detectionHistory = mutableMapOf<String, DetectionHistory>()
-    
+
     // Also support landmark image variants that are not explicitly in the route JSON but
     // exist as asset companions of route landmarks, e.g. "<PrevLandmark>_L" (left) and
     // in future "<PrevLandmark>_R" (right). We DO NOT load arbitrary assets, only these
     // variants if present in assets and if the base landmark is used in the route.
     private var additionalAssetLandmarks: List<RouteLandmarkData> = emptyList()
-    
+
     // Configuration
     private var autoAdvanceThreshold = 0.50f
     private var lastProcessedTime = 0L
     private var frameCounter = 0
-    
+
     /**
-     * Initialisiert die AKAZE-Feature-Detection.
-     * 
-     * AKAZE ist robust bei verschiedenen Lichtverhältnissen und Blickwinkeln -
-     * perfekt für AR-Navigation in Gebäuden. Der Brute-Force-Matcher ist zwar
-     * langsamer, aber dafür sehr genau.
+     * Initializes the AKAZE feature detection.
      */
     fun initializeFeatureDetection() {
         try {
-            // AKAZE mit Standard-Parametern - funktioniert gut für Gebäude-Features
+            // AKAZE with default parameters — works well for building features
             detector = AKAZE.create()
-            // Brute-Force-Matcher für höchste Genauigkeit
+            // Brute-force matcher for highest accuracy
             matcher = DescriptorMatcher.create(DescriptorMatcher.BRUTEFORCE_HAMMING)
-            Log.d(TAG, "AKAZE-Feature-Detection bereit")
+            Log.d(TAG, "AKAZE feature detection ready")
         } catch (e: Exception) {
-            Log.e(TAG, "Feature-Detection konnte nicht initialisiert werden", e)
+            Log.e(TAG, "Feature detection could not be initialized", e)
         }
     }
-    
+
     /**
      * Enable/disable feature mapping
      */
@@ -92,7 +83,7 @@ class LandmarkMatchingManager : ViewModel() {
             initializeFeatureDetection()
         }
     }
-    
+
     /**
      * Pre-load landmark features for the given route
      */
@@ -104,7 +95,7 @@ class LandmarkMatchingManager : ViewModel() {
             // Also gather only asset companions of route landmarks (e.g., id_L and id_R if present)
             additionalAssetLandmarks = getAssetVariantsForRoute(context, baseIds)
             val allLandmarks = (routeLandmarks + additionalAssetLandmarks).distinctBy { it.id }
-            
+
             if (allLandmarks.isNotEmpty()) {
                 Log.d(TAG, "Pre-loading features for ${allLandmarks.size} landmarks (route=${routeLandmarks.size}, asset-variants=${additionalAssetLandmarks.size})")
                 loadLandmarkFeatures(allLandmarks, context)
@@ -116,7 +107,7 @@ class LandmarkMatchingManager : ViewModel() {
             Log.e(TAG, "Failed to pre-load landmark features", e)
         }
     }
-    
+
     /**
      * Process camera frame for landmark detection
      */
@@ -127,24 +118,24 @@ class LandmarkMatchingManager : ViewModel() {
         onProgressUpdate: (List<LandmarkMatch>) -> Unit
     ) {
         if (!_featureMappingEnabled.value) return
-        
+
         val now = System.currentTimeMillis()
         if (now - lastProcessedTime < FRAME_INTERVAL) {
             return
         }
-        
+
         if (_isProcessing.value) {
             Log.v(TAG, "⏭️ Frame processing already in progress, skipping")
             return
         }
-        
+
         frameCounter++
         Log.d(TAG, "🎥 processFrame called - enabled: ${_featureMappingEnabled.value}, processing: ${_isProcessing.value}")
         Log.d(TAG, "🔄 Processing frame #$frameCounter")
-        
+
         _isProcessing.value = true
         lastProcessedTime = now
-        
+
         try {
             withContext(Dispatchers.Default) {
                 // Extract features from current frame
@@ -153,45 +144,45 @@ class LandmarkMatchingManager : ViewModel() {
                     Log.w(TAG, "⚠️ Failed to extract frame features")
                     return@withContext
                 }
-                
+
                 Log.d(TAG, "🔍 Frame features extracted: ${frameFeatures.keypoints.rows()} keypoints")
-                
+
                 // Debug: log current step landmarks
                 val currentStepLandmarks = currentRoute?.steps?.getOrNull(0)?.landmarks ?: emptyList()
                 Log.d(TAG, "🎯 Current step 0 expects landmarks: ${currentStepLandmarks.map { it.id }}")
-                
+
                 // Get landmarks for matching (route + asset-only)
                 val landmarks = getLandmarks(currentRoute)
                 if (landmarks.isEmpty()) {
                     Log.v(TAG, "📭 No landmarks available for matching")
                     return@withContext
                 }
-                
+
                 // Check if we have cached features (should be pre-loaded)
                 val availableFeatures = landmarks.filter { featuresCache.containsKey(it.id) }
                 if (availableFeatures.isEmpty()) {
                     Log.w(TAG, "⚠️ No cached landmark features found - ensure preloadLandmarkFeatures was called")
                     return@withContext
                 }
-                
+
                 Log.d(TAG, "📚 Using cached features for ${availableFeatures.size}/${landmarks.size} landmarks")
                 Log.d(TAG, "🔑 Available landmark IDs: ${availableFeatures.map { it.id }}")
-                
+
                 // Perform landmark matching only with cached landmarks
                 val matches = performLandmarkMatching(frameFeatures, availableFeatures)
                 Log.d(TAG, "🎯 Landmark matching complete: ${matches.size} matches")
-                
+
                 if (matches.isNotEmpty()) {
                     val bestMatch = matches.first()
                     Log.d(TAG, "📊 Best match: ${bestMatch.landmark.id} (${(bestMatch.confidence * 100).toInt()}% confidence)")
                 }
-                
+
                 // Update state
                 _currentMatches.value = matches
-                
+
                 // Notify callback
                 onProgressUpdate(matches)
-                
+
                 // Clean up frame features
                 frameFeatures.keypoints.release()
                 frameFeatures.descriptors.release()
@@ -203,7 +194,7 @@ class LandmarkMatchingManager : ViewModel() {
             Log.v(TAG, "🏁 Frame processing completed")
         }
     }
-    
+
     /**
      * Extract features from bitmap using AKAZE detector
      */
@@ -213,7 +204,7 @@ class LandmarkMatchingManager : ViewModel() {
             val mat = Mat()
             Utils.bitmapToMat(bitmap, mat)
             Log.d(TAG, "📊 Mat created: ${mat.cols()}x${mat.rows()}, channels=${mat.channels()}")
-            
+
             // Convert to grayscale
             val gray = if (mat.channels() > 1) {
                 val grayMat = Mat()
@@ -222,29 +213,29 @@ class LandmarkMatchingManager : ViewModel() {
             } else {
                 mat.clone()
             }
-            
+
             // Detect keypoints and compute descriptors
             val keypoints = MatOfKeyPoint()
             val descriptors = Mat()
-            
+
             detector?.detectAndCompute(gray, Mat(), keypoints, descriptors)
-            
+
             mat.release()
             gray.release()
-            
+
             if (keypoints.rows() == 0) {
                 keypoints.release()
                 descriptors.release()
                 return null
             }
-            
+
             LandmarkFeatures("frame", keypoints, descriptors)
         } catch (e: Exception) {
             Log.e(TAG, "Feature extraction failed", e)
             null
         }
     }
-    
+
     /**
      * Load landmark features into cache from assets
      */
@@ -277,7 +268,7 @@ class LandmarkMatchingManager : ViewModel() {
             }
         }
     }
-    
+
     /**
      * Enumerate only asset variants for route landmarks: for each baseId, include baseId+"_L" and
      * (future) baseId+"_R" if a corresponding image exists in assets/landmark_images.
@@ -302,7 +293,7 @@ class LandmarkMatchingManager : ViewModel() {
             emptyList()
         }
     }
-    
+
     /**
      * Load bitmap from assets with fallback for synthetic landmarks
      */
@@ -314,12 +305,12 @@ class LandmarkMatchingManager : ViewModel() {
             }
         } catch (e: Exception) {
             Log.w(TAG, "Could not load bitmap for $landmarkId: landmark_images/$landmarkId.jpg")
-            
+
             // Fallback for synthetic landmarks (e.g., PT-1-566_L -> PT-1-566)
             if (landmarkId.endsWith("_L") || landmarkId.endsWith("_R")) {
                 val baseLandmarkId = landmarkId.dropLast(2) // Remove _L or _R suffix
                 Log.d(TAG, "Attempting fallback: $landmarkId -> $baseLandmarkId")
-                
+
                 try {
                     context.assets.open("landmark_images/$baseLandmarkId.jpg").use { inputStream ->
                         val bitmap = BitmapFactory.decodeStream(inputStream)
@@ -336,15 +327,15 @@ class LandmarkMatchingManager : ViewModel() {
             }
         }
     }
-    
+
     /**
-     * Extract features from landmark bitmap  
+     * Extract features from landmark bitmap
      */
     private fun extractLandmarkFeatures(bitmap: Bitmap, id: String): LandmarkFeatures? {
         return try {
             val mat = Mat()
             Utils.bitmapToMat(bitmap, mat)
-            
+
             // Convert to grayscale
             val gray = if (mat.channels() > 1) {
                 val grayMat = Mat()
@@ -353,16 +344,16 @@ class LandmarkMatchingManager : ViewModel() {
             } else {
                 mat.clone()
             }
-            
+
             // Detect keypoints and compute descriptors
             val keypoints = MatOfKeyPoint()
             val descriptors = Mat()
-            
+
             detector?.detectAndCompute(gray, Mat(), keypoints, descriptors)
-            
+
             mat.release()
             gray.release()
-            
+
             if (keypoints.rows() > 0 && descriptors.rows() > 0) {
                 LandmarkFeatures(id, keypoints, descriptors)
             } else {
@@ -375,23 +366,23 @@ class LandmarkMatchingManager : ViewModel() {
             null
         }
     }
-    
+
     /**
      * Perform landmark matching against frame features
      */
     private fun performLandmarkMatching(frameFeatures: LandmarkFeatures, landmarks: List<RouteLandmarkData>): List<LandmarkMatch> {
         return try {
             val matches = mutableListOf<LandmarkMatch>()
-            
+
             Log.d(TAG, "🎯 Starting matching against ${landmarks.size} landmarks")
-            
+
             for (landmark in landmarks) {
                 val landmarkFeatures = featuresCache[landmark.id]
                 if (landmarkFeatures != null) {
                     Log.d(TAG, "🔍 Matching ${landmark.id}: frame=${frameFeatures.keypoints.rows()} vs landmark=${landmarkFeatures.keypoints.rows()} keypoints")
                     val match = matchFeatures(frameFeatures, landmarkFeatures)
                     Log.d(TAG, "📊 Match result for ${landmark.id}: ${match.matchCount} matches, ${(match.confidence * 100).toInt()}% confidence")
-                    
+
                     if (match.confidence >= MIN_CONFIDENCE && match.matchCount >= 1) {
                         matches.add(match)
                         Log.d(TAG, "✅ Added good match: ${landmark.id} (${(match.confidence * 100).toInt()}%)")
@@ -402,7 +393,7 @@ class LandmarkMatchingManager : ViewModel() {
                     Log.w(TAG, "⚠️ No cached features for landmark ${landmark.id}")
                 }
             }
-            
+
             // Sort by confidence descending
             matches.sortedByDescending { it.confidence }
         } catch (e: Exception) {
@@ -410,23 +401,23 @@ class LandmarkMatchingManager : ViewModel() {
             emptyList()
         }
     }
-    
+
     /**
      * Match features between frame and landmark
-     * (Kern-Algorithmus mit Unterstützung von LLM erstellt)
+     * (Core algorithm created with assistance from an LLM)
      */
     private fun matchFeatures(frame: LandmarkFeatures, landmark: LandmarkFeatures): LandmarkMatch {
         try {
             if (frame.descriptors.rows() == 0 || landmark.descriptors.rows() == 0) {
                 return createEmptyMatch(landmark.id)
             }
-            
+
             val knnMatches = mutableListOf<MatOfDMatch>()
             matcher?.knnMatch(frame.descriptors, landmark.descriptors, knnMatches, 2)
-            
+
             var goodMatches = 0
             var totalDistance = 0f
-            
+
             knnMatches.forEach { match ->
                 val arr = match.toArray()
                 if (arr.size >= 2) {
@@ -438,11 +429,11 @@ class LandmarkMatchingManager : ViewModel() {
                     }
                 }
             }
-            
+
             val avgDistance = if (goodMatches > 0) totalDistance / goodMatches else Float.MAX_VALUE
             val minKeypoints = minOf(frame.keypoints.rows(), landmark.keypoints.rows())
-            
-            // Komplexe Confidence-Berechnung (mit Unterstützung von LLM erstellt)
+
+            // Complex confidence calculation (created with assistance from an LLM)
             val confidence = if (goodMatches > 0) {
                 when {
                     minKeypoints <= 15 -> (goodMatches.toFloat() / 8f).coerceAtMost(1f)
@@ -452,14 +443,14 @@ class LandmarkMatchingManager : ViewModel() {
                         val distanceScore = if (avgDistance != Float.MAX_VALUE) {
                             (100f / (avgDistance + 1f)).coerceIn(0f, 1f)
                         } else 0f
-                        
+
                         (matchRatio * 0.4f + qualityScore * 0.4f + distanceScore * 0.2f).coerceIn(0f, 1f)
                     }
                 }
             } else 0f
-            
+
             knnMatches.forEach { it.release() }
-            
+
             val landmarkData = RouteLandmarkData(landmark.id)
             return LandmarkMatch(landmarkData, goodMatches, confidence, avgDistance)
         } catch (e: Exception) {
@@ -467,7 +458,7 @@ class LandmarkMatchingManager : ViewModel() {
             return createEmptyMatch(landmark.id)
         }
     }
-    
+
     /**
      * Create empty match for landmark
      */
@@ -475,7 +466,7 @@ class LandmarkMatchingManager : ViewModel() {
         val landmark = RouteLandmarkData(landmarkId)
         return LandmarkMatch(landmark, 0, 0f, Float.MAX_VALUE)
     }
-    
+
     /**
      * Get landmarks from current route plus any additional asset-only landmarks
      */
@@ -483,21 +474,21 @@ class LandmarkMatchingManager : ViewModel() {
         val routeLm = currentRoute?.steps?.flatMap { it.landmarks }?.distinctBy { it.id } ?: emptyList()
         return (routeLm + additionalAssetLandmarks).distinctBy { it.id }
     }
-    
+
     /**
      * Get landmarks from non-null route
      */
     private fun getLandmarksFromRoute(route: NavigationRoute): List<RouteLandmarkData> {
         return route.steps.flatMap { it.landmarks }.distinctBy { it.id }
     }
-    
+
     /**
      * Clean up resources - made public for external cleanup
      */
     fun cleanup() {
         detector = null
         matcher = null
-        
+
         featuresCache.values.forEach { features ->
             try {
                 features.keypoints.release()
@@ -508,26 +499,26 @@ class LandmarkMatchingManager : ViewModel() {
         }
         featuresCache.clear()
     }
-    
+
     override fun onCleared() {
         super.onCleared()
         cleanup()
     }
-    
+
     // Data classes
     data class LandmarkFeatures(
         val id: String,
         val keypoints: MatOfKeyPoint,
         val descriptors: Mat
     )
-    
+
     data class LandmarkMatch(
         val landmark: RouteLandmarkData,
         val matchCount: Int,
         val confidence: Float,
         val distance: Float
     )
-    
+
     data class DetectionHistory(
         val landmarkId: String,
         val stepNumber: Int,

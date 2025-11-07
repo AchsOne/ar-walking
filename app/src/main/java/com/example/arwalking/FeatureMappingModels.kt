@@ -1,11 +1,7 @@
 package com.example.arwalking
 
 
-/**
- * Datenmodelle für Feature-based Mapping
- */
-
-// Landmark mit Feature-Daten
+// Landmark with feature data
 data class FeatureLandmark(
     val id: String,
     val name: String,
@@ -19,7 +15,7 @@ data class FeatureLandmark(
     val lastUpdated: Long = System.currentTimeMillis()
 )
 
-// Position im 3D-Raum
+// Position in 3D space
 data class Position(
     val x: Double,
     val y: Double,
@@ -28,7 +24,7 @@ data class Position(
     val floor: Int? = null
 )
 
-// Keypoint-Daten für Feature-Matching
+// Keypoint data for feature matching
 data class KeypointData(
     val x: Float,
     val y: Float,
@@ -38,7 +34,7 @@ data class KeypointData(
     val classId: Int
 )
 
-// Feature-Map für einen Bereich/Gebäude
+// Feature map for an area/building
 data class FeatureMap(
     val id: String,
     val name: String,
@@ -51,7 +47,7 @@ data class FeatureMap(
 
 
 
-// Feature-Match Ergebnis
+// Feature match result
 data class FeatureMatchResult(
     val landmark: FeatureLandmark,
     val matchCount: Int,
@@ -61,7 +57,7 @@ data class FeatureMatchResult(
     val screenPosition: android.graphics.PointF? = null
 )
 
-// Navigation mit Feature-Matching
+// Navigation with feature matching
 data class FeatureNavigationStep(
     val stepNumber: Int,
     val instruction: String,
@@ -71,7 +67,7 @@ data class FeatureNavigationStep(
     val requiredConfidence: Float = 0.7f
 )
 
-// Erweiterte NavigationRoute mit Feature-Mapping
+// Extended navigation route with feature mapping
 data class FeatureNavigationRoute(
     val totalLength: Double,
     val steps: List<FeatureNavigationStep>,
@@ -89,7 +85,7 @@ data class ImageMetadata(
     val viewingAngle: Float? = null
 )
 
-// Erweiterte Feature-Daten für lokale Verarbeitung
+// Extended feature data for local processing
 data class LandmarkFeatures(
     val keypoints: List<FeatureKeypoint>,
     val descriptors: String // Base64-kodierte OpenCV Descriptors
@@ -105,7 +101,7 @@ data class FeatureKeypoint(
     val classId: Int = -1
 )
 
-// Verarbeitetes Landmark für schnelles Matching
+// Processed landmark for fast matching
 data class ProcessedLandmark(
     val landmark: FeatureLandmark,
     val descriptors: org.opencv.core.Mat,
@@ -113,7 +109,7 @@ data class ProcessedLandmark(
     val image: org.opencv.core.Mat
 )
 
-// Feature-Matching Konfiguration
+// Feature matching configuration
 data class MatchingConfig(
     val maxFeatures: Int = 1000,
     val matchDistanceThreshold: Float = 50.0f,
@@ -122,7 +118,7 @@ data class MatchingConfig(
     val ratioThreshold: Float = 0.75f
 )
 
-// Lokale Feature-Map Cache
+// Local feature map cache
 data class FeatureMapCache(
     val featureMap: FeatureMap,
     val processedLandmarks: Map<String, ProcessedLandmark>,

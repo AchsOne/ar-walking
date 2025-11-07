@@ -203,8 +203,11 @@ fun HomeScreen(
             isVisible = showMenuOverlay,
             onDismiss = { showMenuOverlay = false },
             onFavoriteSelected = { favorite ->
+                // Apply favorite selection to both fields and collapse any dropdowns
                 selectedStart = favorite.startLocation
                 selectedDestination = favorite.destination
+                startDropdownExpanded = false
+                destinationDropdownExpanded = false
             }
         )
 

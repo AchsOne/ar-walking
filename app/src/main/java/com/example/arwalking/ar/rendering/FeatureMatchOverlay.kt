@@ -28,7 +28,7 @@ import com.example.arwalking.R
 import kotlinx.coroutines.delay
 
 /**
- * Overlay-Komponente für die Anzeige von Feature-Match-Ergebnissen
+ * Overlay component for displaying feature match results
  */
 @Composable
 fun FeatureMatchOverlay(
@@ -36,7 +36,7 @@ fun FeatureMatchOverlay(
     isFeatureMappingEnabled: Boolean,
     modifier: Modifier = Modifier
 ) {
-    // Nur anzeigen wenn Feature Mapping aktiviert ist und Matches vorhanden sind
+    // Only show when feature mapping is enabled and matches are available
     AnimatedVisibility(
         visible = isFeatureMappingEnabled && matches.isNotEmpty(),
         enter = slideInVertically { -it } + fadeIn(),
@@ -88,7 +88,7 @@ fun FeatureMatchOverlay(
                 }
             }
             
-            // Match Results
+            // Match results
             matches.take(3).forEach { match ->
                 FeatureMatchCard(match = match)
             }
@@ -198,19 +198,19 @@ private fun FeatureMatchCard(
 }
 
 /**
- * Gibt die Farbe basierend auf der Confidence zurück
+ * Returns the color based on confidence
  */
 private fun getConfidenceColor(confidence: Float): Color {
     return when {
-        confidence >= 0.8f -> Color(0xFF4CAF50) // Grün - Sehr gut
-        confidence >= 0.6f -> Color(0xFFFF9800) // Orange - Gut
-        confidence >= 0.4f -> Color(0xFFFFEB3B) // Gelb - Okay
-        else -> Color(0xFFF44336) // Rot - Schlecht
+        confidence >= 0.8f -> Color(0xFF4CAF50) // Green - Very good
+        confidence >= 0.6f -> Color(0xFFFF9800) // Orange - Good
+        confidence >= 0.4f -> Color(0xFFFFEB3B) // Yellow - Okay
+        else -> Color(0xFFF44336) // Red - Poor
     }
 }
 
 /**
- * Debug-Overlay für Feature-Matching (nur in Debug-Builds)
+ * Debug overlay for feature matching (only in debug builds)
  */
 @Composable
 fun FeatureMatchDebugOverlay(
@@ -277,7 +277,7 @@ fun FeatureMatchDebugOverlay(
 }
 
 /**
- * Erweiterte Status-Anzeige für Feature Mapping mit sofortiger Aktivierung
+ * Enhanced status indicator for feature mapping with immediate activation
  */
 @Composable
 fun FeatureMappingStatusIndicator(

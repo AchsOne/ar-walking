@@ -25,15 +25,14 @@ import com.example.arwalking.R
 import com.example.arwalking.ui.theme.GradientUtils
 
 /**
- * Datenklasse für einzelne Navigationsschritte
- * Jeder Schritt hat einen beschreibenden Text und ein passendes Icon
+ * Data class for individual navigation steps
+ * Each step has a descriptive text and a corresponding icon
  */
 data class NavigationStepData(val text: String, val icon: Int)
 
 /**
- * Ein intelligenter Navigation-Drawer im Google Maps Stil.
- * Zeigt die aktuellen Routenschritte an und kann per Drag vergrößert/verkleinert werden.
- * Funktioniert wie das bekannte Interface von Google Maps - intuitiv und flüssig.
+ * An intelligent navigation drawer inspired by the Google Maps style.
+ * Shows the current route steps and can be resized via drag.
  */
 @Composable
 fun NavigationDrawer(
@@ -48,17 +47,17 @@ fun NavigationDrawer(
     var isDragging by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
-    // Flüssige Höhen-Animation wie bei Google Maps - fühlt sich natürlich an
+    // Smooth height animation like Google Maps — feels natural
     val containerHeight by animateDpAsState(
         targetValue = if (isMaximized) 750.dp else 280.dp, // Groß genug für alle Steps
         animationSpec = spring(
-            dampingRatio = 0.8f, // Nicht zu bouncy
-            stiffness = 500f    // Schnell genug für responsive UX
+            dampingRatio = 0.8f, // Not too bouncy
+            stiffness = 500f    // Fast enough for responsive UX
         ),
         label = "ContainerHeight"
     )
 
-    // Feiner Zoom-Effekt beim Ziehen - gibt haptisches Feedback
+    // Subtle zoom effect while dragging — gives haptic-like feedback
     val scale by animateFloatAsState(
         targetValue = if (isDragging) 1.01f else 1f,
         animationSpec = tween(durationMillis = 100),
@@ -155,7 +154,7 @@ fun NavigationDrawer(
             )
         }
 
-        // Button "Nächster Schritt" an Stelle der ehemaligen Zoom-Steuerung
+        // "Next step" button in place of the former zoom controls
         Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -195,7 +194,7 @@ fun NavigationDrawer(
                     tint = Color.White,
                     modifier = Modifier
                         .size(16.dp)
-                        .graphicsLayer { scaleX = -1f } // Spiegeln, damit der Chevron nach rechts zeigt
+                        .graphicsLayer { scaleX = -1f } // Mirror so the chevron points to the right
                 )
             }
         }

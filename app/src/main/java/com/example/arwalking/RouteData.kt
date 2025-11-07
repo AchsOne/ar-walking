@@ -3,7 +3,7 @@ package com.example.arwalking
 import com.google.gson.annotations.SerializedName
 
 /**
- * Datenmodelle für das Parsen der route.json
+ * Data models for parsing route.json
  */
 
 data class RouteData(

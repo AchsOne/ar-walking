@@ -25,8 +25,8 @@ import kotlinx.coroutines.delay
 import android.util.Log
 
 /**
- * AR Info Island - Semitransparente UI-Komponente
- * Zeigt Scan-Status und hilft bei der AR-Navigation
+ * AR Info Island - semi-transparent UI component
+ * Shows scan status and assists with AR navigation
  */
 @Composable
 fun ARInfoIsland(
@@ -36,14 +36,14 @@ fun ARInfoIsland(
 ) {
     if (!isVisible) return
     
-    // Animation für das Ein-/Ausblenden
+    // Animation for fade in/out
     val alpha by animateFloatAsState(
         targetValue = if (isVisible) 0.85f else 0f,
         animationSpec = tween(durationMillis = 300),
         label = "island_alpha"
     )
     
-    // Pulsierender Effekt für bestimmte Status
+    // Pulsing effect for certain statuses
     val pulseAnimation = rememberInfiniteTransition(label = "pulse")
     val pulseAlpha by pulseAnimation.animateFloat(
         initialValue = 0.7f,
@@ -64,7 +64,7 @@ fun ARInfoIsland(
         Card(
             modifier = Modifier
                 .clip(RoundedCornerShape(25.dp))
-                .blur(radius = 0.5.dp), // Subtiler Blur-Effekt
+                .blur(radius = 0.5.dp), // Subtle blur effect
             colors = CardDefaults.cardColors(
                 containerColor = Color.Black.copy(alpha = alpha)
             ),
@@ -76,7 +76,7 @@ fun ARInfoIsland(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Status Icon mit Animation
+                // Status icon with animation
                 val iconAlpha = if (scanStatus.shouldPulse) pulseAlpha else 1f
                 Icon(
                     imageVector = scanStatus.icon,
@@ -85,7 +85,7 @@ fun ARInfoIsland(
                     modifier = Modifier.size(20.dp)
                 )
                 
-                // Status Text
+                // Status text
                 Text(
                     text = scanStatus.message,
                     color = Color.White.copy(alpha = 0.9f),
@@ -95,7 +95,7 @@ fun ARInfoIsland(
                     maxLines = 1
                 )
                 
-                // Optionaler Fortschrittsindikator
+                // Optional progress indicator
                 if (scanStatus.showProgress) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(16.dp),
@@ -109,7 +109,7 @@ fun ARInfoIsland(
 }
 
 /**
- * Erweiterte AR Info Island mit mehr Informationen
+ * Expanded AR Info Island with more information
  */
 @Composable
 fun ExpandedARInfoIsland(
@@ -147,7 +147,7 @@ fun ExpandedARInfoIsland(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Hauptstatus
+                // Main status
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -167,7 +167,7 @@ fun ExpandedARInfoIsland(
                     )
                 }
                 
-                // 📊 ERWEITERTE Informationsanzeige - IMMER sichtbar für Debug
+                // 📊 EXTENDED information display - ALWAYS visible for debug
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
@@ -234,7 +234,7 @@ private fun InfoChip(
 }
 
 /**
- * AR Scan Status Datenklasse
+ * AR scan status data class
  */
 data class ARScanStatus(
     val message: String,
@@ -293,20 +293,20 @@ data class ARScanStatus(
 }
 
 /**
- * Bestimmt die Farbe basierend auf der Confidence - AKAZE-optimiert
+ * Determines the color based on confidence - AKAZE-optimized
  */
 private fun getConfidenceColor(confidence: Float): Color {
     return when {
-        confidence >= 0.6f -> Color.Green         // Grün: Sehr gut (60%+)
-        confidence >= 0.3f -> Color.Yellow        // Gelb: Gut (30-60%)
-        confidence >= 0.15f -> Color(0xFFFF9800) // Orange: Akzeptabel (15-30%)
-        confidence > 0f -> Color.Red              // Rot: Schwach (1-15%)
-        else -> Color.Gray                        // Grau: Keine Erkennung (0%)
+        confidence >= 0.6f -> Color.Green         // Green: Very good (60%+)
+        confidence >= 0.3f -> Color.Yellow        // Yellow: Good (30-60%)
+        confidence >= 0.15f -> Color(0xFFFF9800) // Orange: Acceptable (15-30%)
+        confidence > 0f -> Color.Red              // Red: Weak (1-15%)
+        else -> Color.Gray                        // Gray: No detection (0%)
     }
 }
 
 /**
- * Hook für automatische Status-Updates basierend auf AR-Zustand
+ * Hook for automatic status updates based on AR state
  */
 @Composable
 fun rememberARScanStatus(
@@ -320,7 +320,7 @@ fun rememberARScanStatus(
     var lastTrackingTime by remember { mutableStateOf(0L) } // Initial 0
     var wasTrackingBefore by remember { mutableStateOf(false) } // Neue Variable
 
-    // Debug-Logging für alle Parameter bei jeder Änderung
+    // Debug logging for all parameters on each change
     LaunchedEffect(isInitialized, landmarkCount, bestConfidence, isTracking) {
         Log.d("ARScan", "=== Parameter Update ===")
         Log.d("ARScan", "isInitialized: $isInitialized (should be true when AR is ready)")
@@ -331,7 +331,7 @@ fun rememberARScanStatus(
         Log.d("ARScan", "stableTrackingState: $stableTrackingState")
     }
 
-    // Stabilisiere den Tracking-Status um falsches "Tracking verloren" zu vermeiden
+    // Stabilize tracking status to avoid false "tracking lost"
     LaunchedEffect(isTracking) {
         Log.d("ARScan", "--- Tracking State Change ---")
         Log.d("ARScan", "isTracking changed to: $isTracking, wasTrackingBefore: $wasTrackingBefore")
